@@ -1,0 +1,1 @@
+ /Users/jacobopavaquintero/proyectos/proyecto_magneto/.dart_tool/flutter_build/7bcaf28e87dc61a4fc9427da9cf903c7/dart_build_result.json: 
