@@ -32,8 +32,8 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
         mediaId: 'demo_media_1',
         instagramPostId: 'demo_ig_1',
         mediaType: 'IMAGE',
-        imageUrl: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&h=400&fit=crop',
-        mediaUrl: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&h=400&fit=crop',
+        imageUrl: 'https://picsum.photos/400/400?random=1',
+        mediaUrl: 'https://picsum.photos/400/400?random=1',
         caption: '¡Estamos contratando! 🚀 Buscamos desarrolladores Full Stack con experiencia en Flutter y Node.js. Salario competitivo y trabajo remoto. #Empleos #Tech #Desarrollo',
         permalink: 'https://instagram.com/p/demo1',
         timestamp: DateTime.now().subtract(const Duration(hours: 2)),
@@ -46,14 +46,14 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
         id: 'demo-post-2',
         mediaId: 'demo_media_2',
         instagramPostId: 'demo_ig_2',
-        mediaType: 'IMAGE',
-        imageUrl: 'https://images.unsplash.com/photo-1551434678-e076c223a692?w=400&h=400&fit=crop',
-        mediaUrl: 'https://images.unsplash.com/photo-1551434678-e076c223a692?w=400&h=400&fit=crop',
-        caption: 'Oportunidad para diseñadores UX/UI 💡 Únete a nuestro equipo creativo y ayuda a diseñar experiencias increíbles. Envíanos tu portafolio! #Diseño #UX #UI #Creatividad',
+        mediaType: 'VIDEO',
+        imageUrl: '',
+        mediaUrl: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+        caption: 'Publicación con v24.0 #Reel - Descubre las últimas tendencias en tecnología y desarrollo de software. ¡No te pierdas esta oportunidad! #Tech #Innovación #Desarrollo',
         permalink: 'https://instagram.com/p/demo2',
         timestamp: DateTime.now().subtract(const Duration(days: 1)),
         createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        commentsCount: 8,
+        commentsCount: 2,
         likesCount: 45,
         sharesCount: 6,
       ),
@@ -62,8 +62,8 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
         mediaId: 'demo_media_3',
         instagramPostId: 'demo_ig_3',
         mediaType: 'IMAGE',
-        imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop',
-        mediaUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop',
+        imageUrl: 'https://picsum.photos/400/400?random=3',
+        mediaUrl: 'https://picsum.photos/400/400?random=3',
         caption: 'Buscamos Product Manager con experiencia en startups 🎯 Lidera productos innovadores y trabaja con equipos ágiles. ¡Aplica ahora! #ProductManagement #Startup #Innovación',
         permalink: 'https://instagram.com/p/demo3',
         timestamp: DateTime.now().subtract(const Duration(days: 2)),
@@ -77,8 +77,8 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
         mediaId: 'demo_media_4',
         instagramPostId: 'demo_ig_4',
         mediaType: 'IMAGE',
-        imageUrl: 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=400&h=400&fit=crop',
-        mediaUrl: 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=400&h=400&fit=crop',
+        imageUrl: 'https://picsum.photos/400/400?random=4',
+        mediaUrl: 'https://picsum.photos/400/400?random=4',
         caption: 'Vacante para Data Scientist 📊 Analiza datos y ayuda a tomar decisiones estratégicas. Conocimiento en Python y Machine Learning requerido. #DataScience #AI #Analytics',
         permalink: 'https://instagram.com/p/demo4',
         timestamp: DateTime.now().subtract(const Duration(days: 3)),
@@ -86,6 +86,36 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
         commentsCount: 12,
         likesCount: 78,
         sharesCount: 9,
+      ),
+      InstagramPostEntity(
+        id: 'demo-post-5',
+        mediaId: 'demo_media_5',
+        instagramPostId: 'demo_ig_5',
+        mediaType: 'VIDEO',
+        imageUrl: '',
+        mediaUrl: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
+        caption: '¡Tu CV, tu pasaporte al éxito! 🚀 ¿Estás listx para dar el siguiente paso en tu carrera? Te ayudamos a destacar entre la multitud. #CV #Carrera #Éxito',
+        permalink: 'https://instagram.com/p/demo5',
+        timestamp: DateTime.now().subtract(const Duration(days: 4)),
+        createdAt: DateTime.now().subtract(const Duration(days: 4)),
+        commentsCount: 8,
+        likesCount: 34,
+        sharesCount: 5,
+      ),
+      InstagramPostEntity(
+        id: 'demo-post-6',
+        mediaId: 'demo_media_6',
+        instagramPostId: 'demo_ig_6',
+        mediaType: 'IMAGE',
+        imageUrl: 'https://picsum.photos/400/400?random=6',
+        mediaUrl: 'https://picsum.photos/400/400?random=6',
+        caption: '¡Tu CV es tu carta de presentación! Asegúrate de que refleje tu verdadero potencial. Consejos profesionales para destacar. #CV #Profesional #Consejos',
+        permalink: 'https://instagram.com/p/demo6',
+        timestamp: DateTime.now().subtract(const Duration(days: 5)),
+        createdAt: DateTime.now().subtract(const Duration(days: 5)),
+        commentsCount: 5,
+        likesCount: 28,
+        sharesCount: 3,
       ),
     ];
   }
@@ -479,29 +509,7 @@ class _InstagramPostTile extends StatelessWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      post.imageUrl,
-                      width: 60,
-                      height: 60,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.image,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        );
-                      },
-                    ),
+                    child: _buildMediaPreview(post),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -597,5 +605,102 @@ class _InstagramPostTile extends StatelessWidget {
     } else {
       return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
     }
+  }
+
+  Widget _buildMediaPreview(InstagramPostEntity post) {
+    // Si es un Reel, mostrar icono de video
+    if (post.mediaType == 'VIDEO' || post.caption.toLowerCase().contains('reel')) {
+      return Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.play_circle_filled,
+          color: Colors.white,
+          size: 24,
+        ),
+      );
+    }
+
+    // Si es una imagen, intentar cargar la imagen
+    if (post.imageUrl.isNotEmpty && post.imageUrl.startsWith('http')) {
+      return Image.network(
+        post.imageUrl,
+        width: 60,
+        height: 60,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1F1F1F),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          print('Error al cargar imagen: ${post.imageUrl} - $error');
+          return _buildPlaceholder(post.mediaType);
+        },
+      );
+    }
+
+    // Si no hay URL válida, mostrar placeholder
+    return _buildPlaceholder(post.mediaType);
+  }
+
+  Widget _buildPlaceholder(String mediaType) {
+    if (mediaType == 'VIDEO' || mediaType.toLowerCase().contains('video')) {
+      return Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.play_circle_filled,
+          color: Colors.white,
+          size: 24,
+        ),
+      );
+    }
+
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Icon(
+        Icons.image,
+        color: Colors.white,
+        size: 24,
+      ),
+    );
   }
 }
