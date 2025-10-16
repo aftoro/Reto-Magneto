@@ -1,0 +1,157 @@
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# IDE specific
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Configuration files with sensitive data
+*.key
+*.pem
+*.p12
+
+# Mobile app specific (Flutter)
+mobile-app/.dart_tool/
+mobile-app/.flutter-plugins
+mobile-app/.flutter-plugins-dependencies
+mobile-app/.packages
+mobile-app/.pub-cache/
+mobile-app/.pub/
+mobile-app/build/
+
+# Android specific
+mobile-app/android/.gradle
+mobile-app/android/captures/
+mobile-app/android/gradlew
+mobile-app/android/gradlew.bat
+mobile-app/android/local.properties
+mobile-app/android/key.properties
+*.jks
+
+# iOS specific
+mobile-app/ios/**/*.mode1v3
+mobile-app/ios/**/*.mode2v3
+mobile-app/ios/**/*.moved-aside
+mobile-app/ios/**/*.pbxuser
+mobile-app/ios/**/*.perspectivev3
+mobile-app/ios/**/*sync/
+mobile-app/ios/**/.sconsign.dblite
+mobile-app/ios/**/.tags*
+mobile-app/ios/**/.vagrant/
+mobile-app/ios/**/DerivedData/
+mobile-app/ios/**/Icon?
+mobile-app/ios/**/Pods/
+mobile-app/ios/**/.symlinks/
+mobile-app/ios/**/profile
+mobile-app/ios/**/xcuserdata
+mobile-app/ios/.generated/
+mobile-app/ios/Flutter/App.framework
+mobile-app/ios/Flutter/Flutter.framework
+mobile-app/ios/Flutter/Flutter.podspec
+mobile-app/ios/Flutter/Generated.xcconfig
+mobile-app/ios/Flutter/app.flx
+mobile-app/ios/Flutter/app.zip
+mobile-app/ios/Flutter/flutter_assets/
+mobile-app/ios/Flutter/flutter_export_environment.sh
+mobile-app/ios/ServiceDefinitions.json
+mobile-app/ios/Runner/GeneratedPluginRegistrant.*
+
+# Web specific
+mobile-app/web/firebase.json
+mobile-app/web/firebase-debug.log
+
+# Desktop specific
+mobile-app/macos/Flutter/GeneratedPluginRegistrant.swift
+mobile-app/macos/Flutter/ephemeral/
+mobile-app/linux/flutter/generated_plugin_registrant.cc
+mobile-app/linux/flutter/generated_plugin_registrant.h
+mobile-app/linux/flutter/generated_plugins.cmake
+mobile-app/windows/flutter/generated_plugin_registrant.cc
+mobile-app/windows/flutter/generated_plugin_registrant.h
+mobile-app/windows/flutter/generated_plugins.cmake
+
+# Backend specific (Node.js/Express)
+backend/node_modules/
+backend/dist/
+backend/build/
+backend/.env
+backend/.env.local
+backend/.env.production
+backend/.env.development
+backend/logs/
+backend/*.log
+backend/npm-debug.log*
+backend/yarn-debug.log*
+backend/yarn-error.log*
+backend/.nyc_output
+backend/coverage/
+backend/.grunt
+backend/bower_components
+backend/.lock-wscript
+backend/build/Release
+backend/jspm_packages/
+backend/.npm
+backend/.eslintcache
+backend/.node_repl_history
+backend/*.tgz
+backend/.yarn-integrity
+backend/.parcel-cache
+backend/.next
+backend/.nuxt
+backend/.vuepress/dist
+backend/.serverless
+backend/.fusebox/
+backend/dynamodb_local/
+backend/.tern-port
+backend/.vscode-test
+backend/.yarn/cache
+backend/.yarn/unplugged
+backend/.yarn/build-state.yml
+backend/.yarn/install-state.gz
+backend/.pnp.*

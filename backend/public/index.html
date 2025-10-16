@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Magneto Agent - Chat</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0b1220; color: #e6e9ef; }
+    header { padding: 16px; border-bottom: 1px solid #1b2437; }
+    main { max-width: 720px; margin: 0 auto; padding: 24px; }
+    .chat { background: #0f172a; border: 1px solid #1b2437; border-radius: 12px; padding: 16px; min-height: 50vh; display: flex; flex-direction: column; gap: 12px; }
+    .msg { padding: 10px 12px; border-radius: 10px; line-height: 1.5; white-space: pre-wrap; }
+    .user { align-self: flex-end; background: #1e293b; }
+    .bot { align-self: flex-start; background: #111827; }
+    form { display: flex; gap: 8px; margin-top: 16px; }
+    textarea { flex: 1; resize: vertical; min-height: 60px; max-height: 200px; padding: 10px; border-radius: 8px; border: 1px solid #1b2437; background: #0f172a; color: #e6e9ef; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #334155; background: #1f2937; color: #e6e9ef; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .hint { opacity: 0.8; font-size: 12px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Magneto Agent</h1>
+  </header>
+  <main>
+    <div class="chat" id="chat"></div>
+    <form id="form">
+      <textarea id="input" placeholder="Escribe tu mensaje (ej: Reaccioné a una historia sobre vacantes tech en Medellín)"></textarea>
+      <button id="send" type="submit">Enviar</button>
+    </form>
+    <div class="hint">Streaming por SSE desde <code>/api/agent/stream?message=...</code></div>
+  </main>
+  <script>
+    const chat = document.getElementById('chat');
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+
+    function addMsg(text, who) {
+      const div = document.createElement('div');
+      div.className = `msg ${who}`;
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+      return div;
+    }
+
+    async function streamMessage(message) {
+      const user = addMsg(message, 'user');
+      const bot = addMsg('', 'bot');
+      send.disabled = true;
+      try {
+        // Usamos EventSource para SSE. Codificar el mensaje.
+        const url = `/api/agent/stream?message=${encodeURIComponent(message)}`;
+        const es = new EventSource(url);
+        es.onmessage = (e) => {
+          if (e.data === '[DONE]') {
+            es.close();
+            send.disabled = false;
+            return;
+          }
+          bot.textContent += e.data;
+        };
+        es.addEventListener('error', (e) => {
+          es.close();
+          send.disabled = false;
+          bot.textContent += '\n[Error de streaming]';
+        });
+      } catch (err) {
+        send.disabled = false;
+        addMsg(`[Error] ${err?.message || err}`, 'bot');
+      }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      streamMessage(text);
+    });
+  </script>
+  </body>
+  </html>
+
+
