@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../data/models/conversation_entity.dart';
 
 class ChatInfoPage extends StatelessWidget {
@@ -12,31 +15,85 @@ class ChatInfoPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Información del Chat'),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading: false,
         flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1F2937), Color(0xFF374151)], // Dark mode gradient
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              bottom: BorderSide(
+                color: AppConstants.textTertiary.withValues(alpha: 0.2),
+                width: 1,
+              ),
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  // Back button Cupertino
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppConstants.textTertiary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.arrow_back_ios,
+                        color: AppConstants.textPrimary,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Logo
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Image.asset(
+                        'assets/images/logo_m.png',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Title
+                  Expanded(
+                    child: Text(
+                      'Información del Chat',
+                      style: GoogleFonts.poppins(
+                        color: AppConstants.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Header con foto de perfil
             _buildProfileHeader(),
             const SizedBox(height: 24),
@@ -45,12 +102,12 @@ class ChatInfoPage extends StatelessWidget {
             _buildSection(
               title: 'Información Básica',
               children: [
-                _buildInfoItem('Nombre completo', conversation.userFullName ?? 'No disponible'),
-                _buildInfoItem('Profesión', conversation.userProfession ?? 'No disponible'),
-                _buildInfoItem('Estudios', conversation.userStudies ?? 'No disponible'),
-                _buildInfoItem('Ubicación', conversation.userLocation ?? 'No disponible'),
-                _buildInfoItem('Años de experiencia', conversation.userExperienceYears?.toString() ?? 'No disponible'),
-                _buildInfoItem('Nivel de carrera', conversation.userCareerLevel ?? 'No disponible'),
+                _buildInfoItem('Nombre completo', conversation.userFullName ?? 'No disponible', icon: CupertinoIcons.person),
+                _buildInfoItem('Profesión', conversation.userProfession ?? 'No disponible', icon: CupertinoIcons.briefcase),
+                _buildInfoItem('Estudios', conversation.userStudies ?? 'No disponible', icon: CupertinoIcons.book),
+                _buildInfoItem('Ubicación', conversation.userLocation ?? 'No disponible', icon: CupertinoIcons.location),
+                _buildInfoItem('Años de experiencia', conversation.userExperienceYears?.toString() ?? 'No disponible', icon: CupertinoIcons.clock),
+                _buildInfoItem('Nivel de carrera', conversation.userCareerLevel ?? 'No disponible', icon: CupertinoIcons.chart_bar),
               ],
             ),
             
@@ -82,12 +139,12 @@ class ChatInfoPage extends StatelessWidget {
             _buildSection(
               title: 'Preferencias Laborales',
               children: [
-                _buildInfoItem('Disponibilidad', conversation.userAvailability ?? 'No disponible'),
-                _buildInfoItem('Expectativa salarial', conversation.userSalaryExpectation ?? 'No disponible'),
-                _buildInfoItem('Tipo de empresa', conversation.userCompanySizePreference ?? 'No disponible'),
-                _buildInfoItem('Modalidad de trabajo', conversation.userWorkModePreference ?? 'No disponible'),
+                _buildInfoItem('Disponibilidad', conversation.userAvailability ?? 'No disponible', icon: CupertinoIcons.calendar),
+                _buildInfoItem('Expectativa salarial', conversation.userSalaryExpectation ?? 'No disponible', icon: CupertinoIcons.money_dollar),
+                _buildInfoItem('Tipo de empresa', conversation.userCompanySizePreference ?? 'No disponible', icon: CupertinoIcons.building_2_fill),
+                _buildInfoItem('Modalidad de trabajo', conversation.userWorkModePreference ?? 'No disponible', icon: CupertinoIcons.briefcase),
                 if (conversation.userIndustryPreference != null && conversation.userIndustryPreference!.isNotEmpty)
-                  _buildInfoItem('Industrias de interés', conversation.userIndustryPreference!.join(', ')),
+                  _buildInfoItem('Industrias de interés', conversation.userIndustryPreference!.join(', '), icon: CupertinoIcons.building_2_fill),
               ],
             ),
             
@@ -123,9 +180,9 @@ class ChatInfoPage extends StatelessWidget {
             _buildSection(
               title: 'Perfil de Instagram',
               children: [
-                _buildInfoItem('Username', conversation.username ?? 'No disponible'),
+                _buildInfoItem('Username', conversation.username ?? 'No disponible', icon: CupertinoIcons.at),
                 if (conversation.userCurrentEmotion != null)
-                  _buildInfoItem('Estado emocional', conversation.userCurrentEmotion!),
+                  _buildInfoItem('Estado emocional', _getEmotionDisplayName(conversation.userCurrentEmotion!), icon: CupertinoIcons.heart),
               ],
             ),
             
@@ -141,22 +198,23 @@ class ChatInfoPage extends StatelessWidget {
               ),
             
             const SizedBox(height: 40),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildProfileHeader() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: AppConstants.textTertiary.withValues(alpha: 0.2),
           width: 1,
         ),
+        boxShadow: AppConstants.cardShadow,
       ),
       child: Row(
         children: [
@@ -167,55 +225,44 @@ class ChatInfoPage extends StatelessWidget {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)], // Blue gradient for dark mode
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF5B1DF4), Color(0xFF8B5CF6)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: BorderRadius.circular(40),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+                      color: const Color(0xFF5B1DF4).withOpacity(0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
                     ),
                   ],
                 ),
-                child: Center(
-                  child: Text(
-                    (conversation.userFullName ?? conversation.username ?? 'U').substring(0, 1).toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 32,
-                    ),
+                child: ClipOval(
+                  child: Image.asset(
+                    _getEmotionImagePath(conversation.userCurrentEmotion ?? 'neutral'),
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _getEmotionColor(conversation.userCurrentEmotion ?? 'neutral').withOpacity(0.2),
+                        ),
+                        child: Icon(
+                          CupertinoIcons.smiley,
+                          color: _getEmotionColor(conversation.userCurrentEmotion ?? 'neutral'),
+                          size: 40,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
-              // Badge de emoción
-              if (conversation.userCurrentEmotion != null)
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: _getEmotionColor(conversation.userCurrentEmotion!),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFF1A1A1A),
-                        width: 3,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        _getEmotionEmoji(conversation.userCurrentEmotion!),
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
           const SizedBox(width: 16),
@@ -226,36 +273,62 @@ class ChatInfoPage extends StatelessWidget {
               children: [
                 Text(
                   conversation.userFullName ?? conversation.username ?? 'Usuario',
-                  style: const TextStyle(
-                    color: Color(0xFFE5E7EB),
+                  style: GoogleFonts.poppins(
+                    color: AppConstants.textPrimary,
                     fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
                   ),
                 ),
                 const SizedBox(height: 4),
+                // Estado emocional en español
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _getEmotionColor(conversation.userCurrentEmotion ?? 'neutral').withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _getEmotionColor(conversation.userCurrentEmotion ?? 'neutral').withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    _getEmotionDisplayName(conversation.userCurrentEmotion ?? 'neutral'),
+                    style: GoogleFonts.poppins(
+                      color: _getEmotionColor(conversation.userCurrentEmotion ?? 'neutral'),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.1,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 if (conversation.userProfession != null)
                   Text(
                     conversation.userProfession!,
-                    style: const TextStyle(
-                      color: Color(0xFF9CA3AF),
+                    style: GoogleFonts.manrope(
+                      color: AppConstants.textSecondary,
                       fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.2,
                     ),
                   ),
                 const SizedBox(height: 8),
                 if (conversation.userLocation != null)
                   Row(
                     children: [
-                      const Icon(
-                        Icons.location_on,
-                        color: Color(0xFF6B7280),
+                      Icon(
+                        CupertinoIcons.location,
+                        color: AppConstants.primaryColor,
                         size: 16,
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 6),
                       Text(
                         conversation.userLocation!,
-                        style: const TextStyle(
-                          color: Color(0xFF6B7280),
+                        style: GoogleFonts.manrope(
+                          color: AppConstants.textSecondary,
                           fontSize: 14,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -273,65 +346,116 @@ class ChatInfoPage extends StatelessWidget {
     required List<Widget> children,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: AppConstants.textTertiary.withValues(alpha: 0.2),
           width: 1,
         ),
+        boxShadow: AppConstants.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Color(0xFFE5E7EB),
+            style: GoogleFonts.poppins(
+              color: AppConstants.textPrimary,
               fontSize: 18,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           ...children,
         ],
       ),
     );
   }
 
-  Widget _buildInfoItem(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+  Widget _buildInfoItem(String label, String value, {IconData? icon}) {
+    final bool isAvailable = value != 'No disponible';
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isAvailable 
+            ? Colors.white
+            : AppConstants.textTertiary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isAvailable 
+            ? AppConstants.primaryColor.withValues(alpha: 0.2)
+            : AppConstants.textTertiary.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF9CA3AF),
-                fontSize: 14,
-              ),
+          // Icono
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isAvailable 
+                ? const Color(0xFF5B1DF4).withOpacity(0.2)
+                : const Color(0xFF2D2D2D).withOpacity(0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon ?? CupertinoIcons.info_circle,
+              color: isAvailable 
+                ? AppConstants.primaryColor
+                : AppConstants.textTertiary,
+              size: 20,
             ),
           ),
-          const Text(
-            ': ',
-            style: TextStyle(
-              color: Color(0xFF9CA3AF),
-              fontSize: 14,
-            ),
-          ),
+          const SizedBox(width: 12),
+          // Contenido
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: Color(0xFFE5E7EB),
-                fontSize: 14,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.manrope(
+                    color: AppConstants.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: GoogleFonts.manrope(
+                    color: isAvailable ? AppConstants.textPrimary : AppConstants.textTertiary,
+                    fontSize: 16,
+                    fontWeight: isAvailable ? FontWeight.w600 : FontWeight.w400,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ],
             ),
           ),
+          // Indicador de estado
+          if (isAvailable)
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: AppConstants.successColor,
+                shape: BoxShape.circle,
+              ),
+            )
+          else
+            Icon(
+              CupertinoIcons.minus_circle,
+              color: AppConstants.textTertiary.withValues(alpha: 0.5),
+              size: 16,
+            ),
         ],
       ),
     );
@@ -342,21 +466,27 @@ class ChatInfoPage extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: skills.map((skill) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFF8B5CF6).withOpacity(0.2),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFF8B5CF6).withOpacity(0.3),
-            width: 1,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF5B1DF4), Color(0xFF8B5CF6)],
           ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF5B1DF4).withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Text(
           skill,
-          style: const TextStyle(
-            color: Color(0xFF8B5CF6),
+          style: GoogleFonts.poppins(
+            color: Colors.white,
             fontSize: 12,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.1,
           ),
         ),
       )).toList(),
@@ -368,21 +498,27 @@ class ChatInfoPage extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: languages.map((language) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFF10B981).withOpacity(0.2),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFF10B981).withOpacity(0.3),
-            width: 1,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF10B981), Color(0xFF34D399)],
           ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF10B981).withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Text(
           language,
-          style: const TextStyle(
-            color: Color(0xFF10B981),
+          style: GoogleFonts.poppins(
+            color: Colors.white,
             fontSize: 12,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.1,
           ),
         ),
       )).toList(),
@@ -394,21 +530,27 @@ class ChatInfoPage extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: interests.map((interest) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFF59E0B).withOpacity(0.2),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFF59E0B).withOpacity(0.3),
-            width: 1,
+          gradient: const LinearGradient(
+            colors: [Color(0xFFF59E0B), Color(0xFFFBBF24)],
           ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFF59E0B).withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Text(
           interest,
-          style: const TextStyle(
-            color: Color(0xFFF59E0B),
+          style: GoogleFonts.poppins(
+            color: Colors.white,
             fontSize: 12,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.1,
           ),
         ),
       )).toList(),
@@ -417,36 +559,41 @@ class ChatInfoPage extends StatelessWidget {
 
   Widget _buildLinkItem(String label, String url) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           SizedBox(
             width: 120,
             child: Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF9CA3AF),
+              style: GoogleFonts.manrope(
+                color: AppConstants.textSecondary,
                 fontSize: 14,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.1,
               ),
             ),
           ),
-          const Text(
+          Text(
             ': ',
             style: TextStyle(
-              color: Color(0xFF9CA3AF),
+              color: AppConstants.textSecondary,
               fontSize: 14,
             ),
           ),
           Expanded(
-            child: GestureDetector(
-              onTap: () {
+            child: CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () {
                 // TODO: Abrir enlace
               },
               child: Text(
                 url,
-                style: const TextStyle(
-                  color: Color(0xFF8B5CF6),
+                style: GoogleFonts.manrope(
+                  color: AppConstants.primaryColor,
                   fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.1,
                   decoration: TextDecoration.underline,
                 ),
               ),
@@ -464,28 +611,31 @@ class ChatInfoPage extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Completitud del perfil',
-              style: TextStyle(
-                color: Color(0xFF9CA3AF),
+              style: GoogleFonts.manrope(
+                color: AppConstants.textSecondary,
                 fontSize: 14,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.1,
               ),
             ),
             Text(
               '$percentage%',
-              style: const TextStyle(
-                color: Color(0xFFE5E7EB),
+              style: GoogleFonts.manrope(
+                color: AppConstants.textPrimary,
                 fontSize: 14,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.1,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Container(
           height: 8,
           decoration: BoxDecoration(
-            color: const Color(0xFF2D2D2D),
+            color: AppConstants.textTertiary.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(4),
           ),
           child: FractionallySizedBox(
@@ -493,9 +643,7 @@ class ChatInfoPage extends StatelessWidget {
             widthFactor: percentage / 100,
             child: Container(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                ),
+                gradient: AppConstants.primaryGradient,
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
@@ -528,26 +676,81 @@ class ChatInfoPage extends StatelessWidget {
     }
   }
 
-  String _getEmotionEmoji(String emotion) {
+  String _getEmotionImagePath(String emotion) {
     switch (emotion.toLowerCase()) {
+      // POSITIVAS
       case 'happy':
-        return '😊';
-      case 'sad':
-        return '😢';
-      case 'angry':
-        return '😠';
+        return 'assets/images/emotions/happy.png';
       case 'excited':
-        return '🤩';
+        return 'assets/images/emotions/excited.png';
+      case 'hopeful':
+        return 'assets/images/emotions/hopeful.png';
+      case 'grateful':
+        return 'assets/images/emotions/grateful.png';
       case 'calm':
-        return '😌';
-      case 'anxious':
-        return '😰';
-      case 'confident':
-        return '😎';
+        return 'assets/images/emotions/calm.png';
+      // NEGATIVAS
+      case 'sad':
+        return 'assets/images/emotions/sad.png';
+      case 'angry':
+        return 'assets/images/emotions/angry.png';
+      case 'stressed':
+        return 'assets/images/emotions/stressed.png';
+      case 'disappointed':
+        return 'assets/images/emotions/disappointed.png';
+      // NEUTRAS
       case 'confused':
-        return '😕';
+        return 'assets/images/emotions/confused.png';
+      case 'curious':
+        return 'assets/images/emotions/curious.png';
+      case 'neutral':
+        return 'assets/images/emotions/neutral.png';
+      // Compatibilidad con emociones antiguas
+      case 'anxious':
+        return 'assets/images/emotions/stressed.png';
+      case 'confident':
+        return 'assets/images/emotions/happy.png';
       default:
-        return '😐';
+        return 'assets/images/emotions/neutral.png';
+    }
+  }
+
+  String _getEmotionDisplayName(String emotion) {
+    switch (emotion.toLowerCase()) {
+      // POSITIVAS
+      case 'happy':
+        return 'Feliz';
+      case 'excited':
+        return 'Emocionado';
+      case 'hopeful':
+        return 'Esperanzado';
+      case 'grateful':
+        return 'Agradecido';
+      case 'calm':
+        return 'Calmado';
+      // NEGATIVAS
+      case 'sad':
+        return 'Triste';
+      case 'angry':
+        return 'Enojado';
+      case 'stressed':
+        return 'Estresado';
+      case 'disappointed':
+        return 'Decepcionado';
+      // NEUTRAS
+      case 'confused':
+        return 'Confundido';
+      case 'curious':
+        return 'Curioso';
+      case 'neutral':
+        return 'Neutral';
+      // Compatibilidad con emociones antiguas
+      case 'anxious':
+        return 'Ansioso';
+      case 'confident':
+        return 'Confiado';
+      default:
+        return 'Neutral';
     }
   }
 }

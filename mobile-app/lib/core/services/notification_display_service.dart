@@ -14,10 +14,10 @@ class NotificationDisplayService {
     required String message,
     required VoidCallback onTap,
   }) {
-    final context = _scaffoldKey.currentContext;
-    if (context == null) return;
+    final scaffoldMessenger = _scaffoldKey.currentState;
+    if (scaffoldMessenger == null) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    scaffoldMessenger.showSnackBar(
       SnackBar(
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -65,15 +65,73 @@ class NotificationDisplayService {
     );
   }
 
+  /// Mostrar notificación de nuevo comentario
+  static void showNewCommentNotification({
+    required String username,
+    required String comment,
+    required String postId,
+    required VoidCallback onTap,
+  }) {
+    final scaffoldMessenger = _scaffoldKey.currentState;
+    if (scaffoldMessenger == null) return;
+
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.comment,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Nuevo comentario de $username',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              comment.length > 50 ? '${comment.substring(0, 50)}...' : comment,
+              style: const TextStyle(fontSize: 12),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        backgroundColor: AppConstants.secondaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusM),
+        ),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Ver',
+          textColor: Colors.white,
+          onPressed: onTap,
+        ),
+      ),
+    );
+  }
+
   /// Mostrar notificación de nueva conversación
   static void showNewConversationNotification({
     required String username,
     required VoidCallback onTap,
   }) {
-    final context = _scaffoldKey.currentContext;
-    if (context == null) return;
+    final scaffoldMessenger = _scaffoldKey.currentState;
+    if (scaffoldMessenger == null) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    scaffoldMessenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
@@ -115,10 +173,14 @@ class NotificationDisplayService {
     required bool connected,
     String? message,
   }) {
-    final context = _scaffoldKey.currentContext;
-    if (context == null) return;
+    final scaffoldMessenger = _scaffoldKey.currentState;
+    if (scaffoldMessenger == null) {
+      // No mostrar error si el ScaffoldMessenger aún no está disponible
+      // Esto es normal durante la inicialización de la app
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    scaffoldMessenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
@@ -154,10 +216,10 @@ class NotificationDisplayService {
 
   /// Mostrar notificación de error
   static void showErrorNotification(String message) {
-    final context = _scaffoldKey.currentContext;
-    if (context == null) return;
+    final scaffoldMessenger = _scaffoldKey.currentState;
+    if (scaffoldMessenger == null) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    scaffoldMessenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [

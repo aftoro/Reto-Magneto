@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_constants.dart';
 
 class AnalyticsCard extends StatelessWidget {
   final String title;
-  final IconData icon;
+  final String? iconPath;
+  final IconData? icon;
   final Widget child;
 
   const AnalyticsCard({
     super.key,
     required this.title,
-    required this.icon,
+    this.iconPath,
+    this.icon,
     required this.child,
   });
 
@@ -18,15 +21,15 @@ class AnalyticsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingL),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white, // Fondo blanco para light mode
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: const Color(0xFFE5E7EB), // Borde gris claro
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withOpacity(0.05), // Sombra suave para light mode
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -37,16 +40,26 @@ class AnalyticsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(
-                icon,
-                color: const Color(0xFF3B82F6),
-                size: 24,
-              ),
+              iconPath != null
+                  ? SvgPicture.asset(
+                      iconPath!,
+                      width: 24,
+                      height: 24,
+                      colorFilter: const ColorFilter.mode(
+                        AppConstants.primaryColor,
+                        BlendMode.srcIn,
+                      ),
+                    )
+                  : Icon(
+                      icon ?? Icons.analytics,
+                      color: AppConstants.primaryColor, // Púrpura Magneto
+                      size: 24,
+                    ),
               const SizedBox(width: AppConstants.spacingS),
               Text(
                 title,
                 style: const TextStyle(
-                  color: Color(0xFFE5E7EB),
+                  color: AppConstants.textPrimary, // Texto negro para light mode
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/config/api_config.dart';
 import '../models/conversation_entity.dart';
 
@@ -11,6 +12,37 @@ class ChatApiService {
     _dio.options.connectTimeout = const Duration(seconds: 10);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
     _dio.options.sendTimeout = const Duration(seconds: 10);
+  }
+
+  /// Obtener headers con autenticación
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final headers = Map<String, String>.from(ApiConfig.defaultHeaders);
+    
+    try {
+      // Obtener sesión actual directamente
+      final session = Supabase.instance.client.auth.currentSession;
+      
+      // Verificar y agregar token
+      if (session != null && session.accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ${session.accessToken}';
+        print('🔐 Token de autenticación agregado a headers (${session.user.email ?? session.user.id})');
+      } else {
+        // Debug detallado
+        final user = Supabase.instance.client.auth.currentUser;
+        print('⚠️ No hay sesión de Supabase disponible');
+        print('   Usuario actual: ${user != null ? '${user.id} (${user.email})' : 'null'}');
+        print('   Sesión: ${session != null ? 'existe pero sin token' : 'null'}');
+        if (session != null) {
+          print('   Token vacío: ${session.accessToken.isEmpty}');
+          print('   Refresh token: ${session.refreshToken?.isNotEmpty ?? false ? 'existe' : 'vacío'}');
+        }
+      }
+    } catch (e, stackTrace) {
+      print('⚠️ Error al obtener token de Supabase: $e');
+      print('   Stack trace: $stackTrace');
+    }
+    
+    return headers;
   }
 
   // Stream para notificaciones SSE
@@ -41,29 +73,59 @@ class ChatApiService {
           if (search != null) 'search': search,
         };
 
+        // Obtener headers con autenticación
+        final headers = await _getAuthHeaders();
+
         final response = await _dio.get(
           ApiConfig.chats,
           queryParameters: queryParams,
           options: Options(
-            headers: ApiConfig.defaultHeaders,
+            headers: headers,
           ),
         );
 
         if (response.statusCode == 200) {
-          return ChatsResponse.fromJson(response.data);
+          final chatsResponse = ChatsResponse.fromJson(response.data);
+          print('📋 [ChatApiService] Conversaciones cargadas: ${chatsResponse.chats.length}');
+          for (var idx = 0; idx < chatsResponse.chats.length; idx++) {
+            final chat = chatsResponse.chats[idx];
+            print('   ${idx + 1}. Conversation ID: ${chat.conversation.id} | Username: ${chat.conversation.username} | User ID: ${chat.conversation.userId}');
+          }
+          return chatsResponse;
         } else {
           throw Exception('Error HTTP: ${response.statusCode}');
         }
       } on DioException catch (e) {
         retryCount++;
-        print('Intento $retryCount/$maxRetries falló: ${e.message}');
+        print('⚠️ [ChatApiService] Intento $retryCount/$maxRetries falló: ${e.message}');
+        print('   Status code: ${e.response?.statusCode}');
+        print('   Error type: ${e.type}');
+        
+        // Si es un error 401, devolver respuesta vacía en lugar de intentar refrescar
+        // El refresh automático puede causar problemas con Supabase y cerrar la sesión
+        if (e.response?.statusCode == 401) {
+          print('🔐 Error 401 detectado, devolviendo respuesta vacía (no se intentará refrescar la sesión)');
+          return ChatsResponse(
+            chats: [],
+            pagination: PaginationInfo(
+              currentPage: 1,
+              totalPages: 1,
+              totalItems: 0,
+              itemsPerPage: limit,
+              hasNext: false,
+              hasPrev: false,
+            ),
+            filters: {},
+          );
+        }
         
         if (retryCount >= maxRetries) {
-          // Si es un error de conexión, devolver respuesta vacía en lugar de fallar
+          // Si es un error de conexión o 404, devolver respuesta vacía en lugar de fallar
           if (e.type == DioExceptionType.connectionTimeout ||
               e.type == DioExceptionType.receiveTimeout ||
-              e.type == DioExceptionType.connectionError) {
-            print('Conexión fallida después de $maxRetries intentos, devolviendo respuesta vacía');
+              e.type == DioExceptionType.connectionError ||
+              e.response?.statusCode == 404) {
+            print('⚠️ Conexión fallida después de $maxRetries intentos, devolviendo respuesta vacía');
             return ChatsResponse(
               chats: [],
               pagination: PaginationInfo(
@@ -77,6 +139,7 @@ class ChatApiService {
               filters: {},
             );
           }
+          // Para otros errores, lanzar excepción
           throw Exception('Error al obtener chats después de $maxRetries intentos: ${e.message}');
         }
         
@@ -97,10 +160,13 @@ class ChatApiService {
   /// Obtener conversación específica con mensajes
   Future<ConversationWithMessages> getConversation(String conversationId) async {
     try {
+      // Obtener headers con autenticación
+      final headers = await _getAuthHeaders();
+
       final response = await _dio.get(
         '${ApiConfig.conversations}/$conversationId',
         options: Options(
-          headers: ApiConfig.defaultHeaders,
+          headers: headers,
         ),
       );
 
@@ -117,21 +183,118 @@ class ChatApiService {
     int offset = 0,
   }) async {
     try {
+      // Obtener headers con autenticación
+      final headers = await _getAuthHeaders();
+
+      // Construir URL usando buildUrl para asegurar formato correcto
+      final url = ApiConfig.buildUrl('/messages/conversation/:id', {'id': conversationId});
+      
+      print('📨 [ChatApiService] Obteniendo mensajes de conversación');
+      print('   📋 Conversation ID recibido: $conversationId');
+      print('   📋 Tipo: ${conversationId.runtimeType}');
+      print('   📋 Longitud: ${conversationId.length}');
+      print('   🔗 URL construida: $url');
+      print('   🔐 Headers con auth: ${headers.containsKey('Authorization')}');
+      if (headers.containsKey('Authorization')) {
+        final token = headers['Authorization'] as String;
+        print('   🔐 Token (primeros 20 chars): ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
+      }
+
       final response = await _dio.get(
-        '${ApiConfig.conversations}/$conversationId/messages',
+        url,
         queryParameters: {
           'limit': limit,
-          'offset': offset,
+          'page': (offset / limit).floor() + 1, // Convertir offset a page
+          'orderBy': 'created_at',
+          'orderDirection': 'asc',
         },
         options: Options(
-          headers: ApiConfig.defaultHeaders,
+          headers: headers,
         ),
       );
 
-      return (response.data['messages'] as List)
-          .map((msg) => MessageEntity.fromApiJson(msg))
-          .toList();
-    } catch (e) {
+      print('✅ [ChatApiService] Respuesta recibida');
+      print('   Status Code: ${response.statusCode}');
+      print('   Tipo de datos: ${response.data.runtimeType}');
+      print('   Keys en response.data: ${(response.data as Map<String, dynamic>?)?.keys.toList()}');
+
+      // El backend devuelve: { success: true, data: { messages: [...], total, page, limit } }
+      if (response.data is Map<String, dynamic>) {
+        final responseMap = response.data as Map<String, dynamic>;
+        print('   Success: ${responseMap['success']}');
+        print('   Data presente: ${responseMap['data'] != null}');
+        
+        if (responseMap['success'] == true && responseMap['data'] != null) {
+          final data = responseMap['data'] as Map<String, dynamic>;
+          print('   Keys en data: ${data.keys.toList()}');
+          print('   Total en data: ${data['total']}');
+          print('   Page en data: ${data['page']}');
+          print('   Limit en data: ${data['limit']}');
+          
+          final messagesList = data['messages'] as List? ?? [];
+          
+          print('📬 [ChatApiService] Mensajes encontrados: ${messagesList.length}');
+          if (messagesList.isNotEmpty) {
+            print('   Primer mensaje: ${messagesList[0]}');
+          }
+          
+          if (messagesList.isEmpty) {
+            print('⚠️ No se encontraron mensajes en la conversación');
+            return [];
+          }
+          
+          return messagesList
+              .map((msg) {
+                try {
+                  return MessageEntity.fromApiJson(msg);
+                } catch (e) {
+                  print('⚠️ Error al parsear mensaje: $e');
+                  print('   Datos del mensaje: $msg');
+                  return null;
+                }
+              })
+              .whereType<MessageEntity>()
+              .toList();
+        } else if (response.data['messages'] != null) {
+          // Formato alternativo: { messages: [...] }
+          final messagesList = response.data['messages'] as List? ?? [];
+          print('📬 Mensajes encontrados (formato alternativo): ${messagesList.length}');
+          return messagesList
+              .map((msg) {
+                try {
+                  return MessageEntity.fromApiJson(msg);
+                } catch (e) {
+                  print('⚠️ Error al parsear mensaje: $e');
+                  return null;
+                }
+              })
+              .whereType<MessageEntity>()
+              .toList();
+        } else {
+          print('⚠️ Respuesta sin formato esperado: ${response.data}');
+          return [];
+        }
+      } else {
+        print('⚠️ Respuesta no es un Map: ${response.data.runtimeType}');
+        return [];
+      }
+    } on DioException catch (e) {
+      print('❌ Error DioException al obtener mensajes:');
+      print('   Tipo: ${e.type}');
+      print('   Mensaje: ${e.message}');
+      print('   Status Code: ${e.response?.statusCode}');
+      print('   Response Data: ${e.response?.data}');
+      
+      if (e.response?.statusCode == 401) {
+        throw Exception('No autorizado. Por favor, inicia sesión nuevamente.');
+      } else if (e.response?.statusCode == 404) {
+        throw Exception('Conversación no encontrada.');
+      } else {
+        throw Exception('Error al obtener mensajes: ${e.message}');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error inesperado al obtener mensajes: $e');
+      print('   Stack trace: $stackTrace');
       throw Exception('Error al obtener mensajes: $e');
     }
   }
@@ -283,8 +446,20 @@ class ChatsResponse {
 
   factory ChatsResponse.fromJson(Map<String, dynamic> json) {
     try {
-      // Manejar la nueva estructura de la API con validación de null
-      final chatsList = json['chats'] as List? ?? [];
+      // El backend devuelve: { success: true, data: { chats: [...], total, page, limit, has_more } }
+      // Verificar si la respuesta tiene success: false
+      if (json['success'] == false) {
+        throw Exception(json['message'] ?? 'Error al obtener conversaciones');
+      }
+
+      // Obtener el objeto 'data' que contiene 'chats'
+      final dataObj = json['data'] as Map<String, dynamic>?;
+      if (dataObj == null) {
+        throw Exception('La respuesta no contiene el campo "data"');
+      }
+
+      // Obtener la lista de conversaciones desde 'data.chats'
+      final chatsList = dataObj['chats'] as List? ?? [];
       final chats = <ConversationWithMessages>[];
       
       for (final chatData in chatsList) {
@@ -294,28 +469,39 @@ class ChatsResponse {
             chats.add(chat);
           } catch (e) {
             print('Error al procesar chat individual: $e');
+            print('Datos del chat: $chatData');
             // Continuar con el siguiente chat en lugar de fallar completamente
           }
         }
       }
 
-      // Crear información de paginación basada en la nueva estructura
+      // Obtener información de paginación desde 'data'
+      final total = dataObj['total'] as int? ?? 0;
+      final currentPage = dataObj['page'] as int? ?? 1;
+      final limit = dataObj['limit'] as int? ?? 20;
+      final hasMore = dataObj['has_more'] as bool? ?? false;
+      final totalPages = (total / limit).ceil();
+
       final pagination = PaginationInfo(
-        currentPage: 1, // La API no proporciona página actual en la nueva estructura
-        totalPages: 1, // Calcular basado en total y limit
-        totalItems: json['total'] ?? 0,
-        itemsPerPage: json['limit'] ?? 20,
-        hasNext: json['has_more'] ?? false,
-        hasPrev: false, // No hay información de página anterior
+        currentPage: currentPage,
+        totalPages: totalPages > 0 ? totalPages : 1,
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNext: hasMore,
+        hasPrev: currentPage > 1,
       );
+
+      // Los filtros no vienen en la respuesta actual del backend
+      final filters = <String, dynamic>{};
 
       return ChatsResponse(
         chats: chats,
         pagination: pagination,
-        filters: {}, // La nueva API no incluye filtros en la respuesta
+        filters: filters,
       );
     } catch (e) {
       print('Error al procesar respuesta de chats: $e');
+      print('Respuesta completa: $json');
       // Retornar respuesta vacía en caso de error
       return ChatsResponse(
         chats: [],

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../data/models/preview_entity.dart';
 import '../providers/preview_provider.dart';
-import '../widgets/ai_loading_animation.dart';
+import '../providers/reel_generation_monitor_provider.dart';
+import '../widgets/preview_skeleton_loader.dart';
 import 'preview_corrections_page.dart';
 import 'reel_preview_page.dart';
 import 'previews_list_page.dart';
@@ -37,6 +42,9 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
   int _selectedDuration = 8;
   String _selectedReelStyle = 'moderno_profesional';
   
+  // Guardar el tema del reel para el monitoreo
+  String? _currentReelTopic;
+  
   // Opciones para los dropdowns de reels
   final List<Map<String, String>> _accentOptions = [
     {'value': 'neutral', 'label': 'Neutral'},
@@ -66,6 +74,17 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
     {'value': 'ilustrativo', 'label': 'Ilustrativo'},
     {'value': 'elegante', 'label': 'Elegante'},
     {'value': 'tech', 'label': 'Tech'},
+    {'value': 'vibrante', 'label': 'Vibrante'},
+    {'value': 'profesional', 'label': 'Profesional'},
+    {'value': 'creativo', 'label': 'Creativo'},
+    {'value': 'audaz', 'label': 'Audaz'},
+    {'value': 'suave', 'label': 'Suave'},
+    {'value': 'geometrico', 'label': 'Geométrico'},
+    {'value': 'abstracto', 'label': 'Abstracto'},
+    {'value': 'cinematico', 'label': 'Cinematográfico'},
+    {'value': 'retro', 'label': 'Retro'},
+    {'value': 'futurista', 'label': 'Futurista'},
+    {'value': 'naturaleza', 'label': 'Naturaleza'},
   ];
   
   late AnimationController _fadeController;
@@ -134,11 +153,107 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
     
     // Listen to state changes
     ref.listen<PreviewCreationState>(previewCreationProvider, (previous, next) {
-      if (next is PreviewCreationSuccess) {
+      if (next is PreviewCreationStreaming) {
+        // Si es un reel generándose en background (con o sin previewId)
+        // Verificar si es un nuevo reel (cambió de estado)
+        if (previous is! PreviewCreationStreaming || 
+            previous.previewId != next.previewId) {
+          // Iniciar monitoreo global del reel con el tema real
+          if (next.previewId == null && _currentReelTopic != null) {
+            ref.read(reelGenerationMonitorProvider.notifier).startMonitoring(_currentReelTopic!);
+          }
+          
+          // Redirigir al dashboard (página principal)
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          
+          // Mostrar toast inicial
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(next.statusMessage ?? 'Tu reel se está generando en background...'),
+                  ),
+                ],
+              ),
+              backgroundColor: AppConstants.primaryColor,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        } else if (previous.statusMessage != next.statusMessage) {
+          // Actualizar toast con nuevo progreso
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      next.statusMessage ?? 'Generando reel...',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppConstants.primaryColor,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else if (next is PreviewCreationSuccess) {
+        // Verificar si viene de un estado "generating" (reel en background)
+        final wasGenerating = previous is PreviewCreationStreaming;
+        
         // Reload recent previews
         ref.read(previewsListProvider.notifier).loadPreviews();
         
+        // Si era un reel generándose en background, mostrar toast
+        if (wasGenerating && next.response.preview.type == 'reel') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text('¡Tu reel está listo!'),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'Ver',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReelPreviewPage(
+                        preview: next.response.preview,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+        }
+        
         // Navigate to appropriate page based on preview type
+        // Solo navegar automáticamente si NO era un reel en background (para dar tiempo al usuario de ver el toast)
+        if (!wasGenerating) {
         if (next.response.preview.type == 'reel') {
           Navigator.push(
             context,
@@ -158,6 +273,7 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
               ),
             ),
           );
+          }
         }
       } else if (next is PreviewCreationError) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -169,63 +285,73 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       }
     });
     
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              color: Colors.white,
-              size: 20,
-            ),
-          ),
-        ),
-        title: const Text(
-          'Crear Contenido',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const PreviewsListPage(),
-                ),
-              );
-            },
-            icon: const Icon(
-              Icons.history,
-              color: Colors.white,
-            ),
-          ),
-        ],
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppConstants.backgroundColor, // Fondo blanco para light mode
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0F0F0F),
-              Color(0xFF1A1A1A),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20), // Icono iOS blanco
+            onPressed: () => Navigator.pop(context),
+            padding: const EdgeInsets.only(left: 8), // Padding ajustado
+          ),
+          title: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.white.withOpacity(0.2),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Image.asset(
+                    'assets/images/logo_m.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Crear Contenido',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                ),
+              ),
             ],
           ),
+          actions: [
+            IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PreviewsListPage(),
+                  ),
+                );
+              },
+              icon: Icon(
+                CupertinoIcons.clock,
+                color: Colors.white.withOpacity(0.9),
+              ),
+            ),
+          ],
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              gradient: AppConstants.brandGradient, // Gradiente de marca para light mode
+            ),
+          ),
         ),
-        child: SafeArea(
+        body: SafeArea(
           child: FadeTransition(
             opacity: _fadeAnimation,
             child: SlideTransition(
@@ -240,8 +366,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
 
   Widget _buildContent(PreviewCreationState state) {
     if (state is PreviewCreationLoading) {
-      return const Center(
-        child: AILoadingAnimation(),
+      return PreviewSkeletonLoader(
+        type: _selectedType.name,
       );
     }
 
@@ -309,8 +435,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Crea contenido increíble',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 28,
             fontWeight: FontWeight.bold,
           ),
@@ -318,8 +444,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         const SizedBox(height: 8),
         Text(
           'Déjate inspirar por la IA para crear posts e historias que conecten con tu audiencia',
-          style: TextStyle(
-            color: Colors.grey[400],
+          style: GoogleFonts.poppins(
+            color: Colors.grey.shade600,
             fontSize: 16,
           ),
         ),
@@ -333,8 +459,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Tipo de contenido',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -350,28 +476,28 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
                   margin: const EdgeInsets.only(right: 8),
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF2D2D2D),
-                    borderRadius: BorderRadius.circular(12),
+                    color: isSelected ? const Color(0xFF5B1DF4) : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF4B5563),
+                      color: isSelected ? const Color(0xFF5B1DF4) : Colors.grey.shade200,
+                      width: 1,
                     ),
+                    boxShadow: isSelected ? [
+                      BoxShadow(
+                        color: const Color(0xFF5B1DF4).withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ] : null,
                   ),
                   child: Column(
                     children: [
-                      Icon(
-                        type == PreviewType.post 
-                            ? Icons.photo_outlined 
-                            : type == PreviewType.story 
-                                ? Icons.auto_stories_outlined 
-                                : Icons.video_library_outlined,
-                        color: isSelected ? Colors.white : Colors.grey[400],
-                        size: 24,
-                      ),
+                      _getTypeIcon(type, isSelected),
                       const SizedBox(height: 8),
                       Text(
                         type.label,
                         style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.grey[400],
+                          color: isSelected ? Colors.white : Colors.grey.shade700,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -393,8 +519,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           '¿Sobre qué quieres crear?',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -403,25 +529,29 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         TextFormField(
           controller: _topicController,
           maxLines: 3,
-          style: const TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
           ),
           decoration: InputDecoration(
             hintText: 'Ej: "Tendencias de marketing digital para 2024"',
-            hintStyle: TextStyle(
-              color: Colors.grey[500],
+            hintStyle: GoogleFonts.poppins(
+              color: Colors.grey.shade500,
               fontSize: 16,
             ),
             filled: true,
-            fillColor: const Color(0xFF2D2D2D),
+            fillColor: Colors.grey.shade50,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: Color(0xFF5B1DF4), width: 2),
             ),
           ),
           validator: (value) {
@@ -444,8 +574,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Estilo visual',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -453,26 +583,48 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         const SizedBox(height: 12),
         DropdownButtonFormField<PreviewStyle>(
           value: _selectedStyle,
-          onChanged: (value) => setState(() => _selectedStyle = value!),
-          dropdownColor: const Color(0xFF2D2D2D),
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _selectedStyle = value);
+            }
+          },
           decoration: InputDecoration(
             filled: true,
-            fillColor: const Color(0xFF2D2D2D),
+            fillColor: Colors.grey.shade50,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: AppConstants.primaryColor, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           ),
+          style: GoogleFonts.poppins(
+            color: Colors.black,
+            fontSize: 16,
+          ),
+          dropdownColor: Colors.white,
+          icon: Icon(
+            CupertinoIcons.chevron_down,
+            color: Colors.grey.shade600,
+            size: 20,
+          ),
           items: PreviewStyle.values.map((style) {
-            return DropdownMenuItem(
+            return DropdownMenuItem<PreviewStyle>(
               value: style,
-              child: Text(style.label),
+              child: Text(
+                style.label,
+                style: GoogleFonts.poppins(
+                  color: Colors.black,
+                  fontSize: 16,
+                ),
+              ),
             );
           }).toList(),
         ),
@@ -486,8 +638,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Audiencia objetivo',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -495,26 +647,48 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         const SizedBox(height: 12),
         DropdownButtonFormField<TargetAudience>(
           value: _selectedAudience,
-          onChanged: (value) => setState(() => _selectedAudience = value!),
-          dropdownColor: const Color(0xFF2D2D2D),
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _selectedAudience = value);
+            }
+          },
           decoration: InputDecoration(
             filled: true,
-            fillColor: const Color(0xFF2D2D2D),
+            fillColor: Colors.grey.shade50,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: AppConstants.primaryColor, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           ),
+          style: GoogleFonts.poppins(
+            color: Colors.black,
+            fontSize: 16,
+          ),
+          dropdownColor: Colors.white,
+          icon: Icon(
+            CupertinoIcons.chevron_down,
+            color: Colors.grey.shade600,
+            size: 20,
+          ),
           items: TargetAudience.values.map((audience) {
-            return DropdownMenuItem(
+            return DropdownMenuItem<TargetAudience>(
               value: audience,
-              child: Text(audience.label),
+              child: Text(
+                audience.label,
+                style: GoogleFonts.poppins(
+                  color: Colors.black,
+                  fontSize: 16,
+                ),
+              ),
             );
           }).toList(),
         ),
@@ -528,8 +702,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Estilo Visual',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -537,26 +711,48 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           value: _selectedReelStyle,
-          onChanged: (value) => setState(() => _selectedReelStyle = value!),
-          dropdownColor: const Color(0xFF2D2D2D),
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _selectedReelStyle = value);
+            }
+          },
           decoration: InputDecoration(
             filled: true,
-            fillColor: const Color(0xFF2D2D2D),
+            fillColor: Colors.grey.shade50,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: AppConstants.primaryColor, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          ),
+          style: GoogleFonts.poppins(
+            color: Colors.black,
+            fontSize: 16,
+          ),
+          dropdownColor: Colors.white,
+          icon: Icon(
+            CupertinoIcons.chevron_down,
+            color: Colors.grey.shade600,
+            size: 20,
           ),
           items: _reelStyleOptions.map((option) {
             return DropdownMenuItem<String>(
               value: option['value'],
-              child: Text(option['label']!),
+              child: Text(
+                option['label']!,
+                style: GoogleFonts.poppins(
+                  color: Colors.black,
+                  fontSize: 16,
+                ),
+              ),
             );
           }).toList(),
         ),
@@ -570,8 +766,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Acento del Audio',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -579,26 +775,48 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           value: _selectedAccent,
-          onChanged: (value) => setState(() => _selectedAccent = value!),
-          dropdownColor: const Color(0xFF2D2D2D),
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _selectedAccent = value);
+            }
+          },
           decoration: InputDecoration(
             filled: true,
-            fillColor: const Color(0xFF2D2D2D),
+            fillColor: Colors.grey.shade50,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: AppConstants.primaryColor, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           ),
+          style: GoogleFonts.poppins(
+            color: Colors.black,
+            fontSize: 16,
+          ),
+          dropdownColor: Colors.white,
+          icon: Icon(
+            CupertinoIcons.chevron_down,
+            color: Colors.grey.shade600,
+            size: 20,
+          ),
           items: _accentOptions.map((option) {
-            return DropdownMenuItem(
+            return DropdownMenuItem<String>(
               value: option['value'],
-              child: Text(option['label']!),
+              child: Text(
+                option['label']!,
+                style: GoogleFonts.poppins(
+                  color: Colors.black,
+                  fontSize: 16,
+                ),
+              ),
             );
           }).toList(),
         ),
@@ -612,8 +830,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Duración',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -621,26 +839,48 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         const SizedBox(height: 12),
         DropdownButtonFormField<int>(
           value: _selectedDuration,
-          onChanged: (value) => setState(() => _selectedDuration = value!),
-          dropdownColor: const Color(0xFF2D2D2D),
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _selectedDuration = value);
+            }
+          },
           decoration: InputDecoration(
             filled: true,
-            fillColor: const Color(0xFF2D2D2D),
+            fillColor: Colors.grey.shade50,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: AppConstants.primaryColor, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          ),
+          style: GoogleFonts.poppins(
+            color: Colors.black,
+            fontSize: 16,
+          ),
+          dropdownColor: Colors.white,
+          icon: Icon(
+            CupertinoIcons.chevron_down,
+            color: Colors.grey.shade600,
+            size: 20,
           ),
           items: _durationOptions.map((option) {
             return DropdownMenuItem<int>(
               value: option['value'] as int,
-              child: Text(option['label']),
+              child: Text(
+                option['label'],
+                style: GoogleFonts.poppins(
+                  color: Colors.black,
+                  fontSize: 16,
+                ),
+              ),
             );
           }).toList(),
         ),
@@ -654,8 +894,8 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       children: [
         Text(
           'Imagen de referencia (opcional)',
-          style: TextStyle(
-            color: Colors.white,
+          style: GoogleFonts.poppins(
+            color: Colors.black,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -666,16 +906,16 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
           child: Container(
             height: 120,
             decoration: BoxDecoration(
-              color: const Color(0xFF2D2D2D),
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFF4B5563),
-                style: BorderStyle.solid,
+                color: Colors.grey.shade200,
+                width: 1,
               ),
             ),
             child: _selectedImagePath != null
                 ? ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                     child: Image.asset(
                       _selectedImagePath!,
                       fit: BoxFit.cover,
@@ -685,15 +925,15 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.add_photo_alternate_outlined,
-                        color: Colors.grey[400],
+                        CupertinoIcons.photo_fill_on_rectangle_fill,
+                        color: Colors.grey.shade400,
                         size: 32,
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'Toca para agregar imagen',
-                        style: TextStyle(
-                          color: Colors.grey[400],
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey.shade600,
                           fontSize: 14,
                         ),
                       ),
@@ -712,41 +952,42 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
     return Row(
       children: [
         Expanded(
-          child: ElevatedButton(
+          child: CupertinoButton(
             onPressed: isLoading ? null : _createContent,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _selectedType == PreviewType.reel 
-                ? const Color(0xFF8B5CF6)  // Color púrpura para Reels
-                : const Color(0xFF3B82F6), // Color azul para Posts/Stories
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            color: const Color(0xFF5B1DF4), // Púrpura Magneto
+            borderRadius: BorderRadius.circular(16),
             child: isLoading && _selectedType == PreviewType.reel
-              ? const Row(
+              ? Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
+                    const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      child: CupertinoActivityIndicator(
+                        color: Colors.white,
+                        radius: 10,
                       ),
                     ),
-                    SizedBox(width: 12),
-                    Text('Generando Reel...'),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Generando Reel...',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 )
               : Text(
                   _selectedType == PreviewType.reel 
                     ? 'Generar Reel (Background)'
                     : 'Crear ${_selectedType.label}',
-                  style: const TextStyle(
+                  style: GoogleFonts.poppins(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
                 ),
           ),
@@ -766,7 +1007,7 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
             Text(
               'Recientes',
               style: TextStyle(
-                color: Colors.white,
+                color: Colors.black,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -784,7 +1025,7 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
               child: Text(
                 'Ver todos',
                 style: TextStyle(
-                  color: const Color(0xFF3B82F6),
+                  color: const Color(0xFF5B1DF4),
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -811,13 +1052,14 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
             width: 100,
             margin: const EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF2D2D2D),
+              color: Colors.grey.shade50,
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
             ),
             child: Center(
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF5B1DF4)),
               ),
             ),
           );
@@ -829,8 +1071,9 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       return Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: const Color(0xFF2D2D2D),
+          color: Colors.grey.shade50,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
         ),
         child: Center(
           child: Column(
@@ -838,14 +1081,14 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
             children: [
               Icon(
                 Icons.error_outline,
-                color: Colors.red[300],
+                color: Colors.red.shade400,
                 size: 24,
               ),
               const SizedBox(height: 8),
               Text(
                 'Error al cargar previews',
                 style: TextStyle(
-                  color: Colors.red[300],
+                  color: Colors.red.shade400,
                   fontSize: 12,
                 ),
               ),
@@ -862,8 +1105,9 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
         return Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            color: const Color(0xFF2D2D2D),
+            color: Colors.grey.shade50,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
           ),
           child: Center(
             child: Column(
@@ -871,14 +1115,14 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
               children: [
                 Icon(
                   Icons.image_outlined,
-                  color: Colors.grey[400],
+                  color: Colors.grey.shade400,
                   size: 32,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'No hay previews recientes',
                   style: TextStyle(
-                    color: Colors.grey[400],
+                    color: Colors.grey.shade600,
                     fontSize: 12,
                   ),
                 ),
@@ -906,13 +1150,14 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
                 width: 60,
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2D2D2D),
+                  color: Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
                 ),
                 child: Center(
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF5B1DF4)),
                   ),
                 ),
               );
@@ -981,10 +1226,15 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
                 ),
                 child: ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: MediaPreviewWidget(
-                    mediaUrl: preview.previewImage,
-                    aspectRatio: 1.0,
-                  ),
+                  child: preview.type == 'reel' && preview.videoUrl != null && preview.videoUrl!.isNotEmpty
+                      ? MediaPreviewWidget(
+                          mediaUrl: preview.videoUrl!,
+                          aspectRatio: 1.0,
+                        )
+                      : MediaPreviewWidget(
+                          mediaUrl: preview.previewImage,
+                          aspectRatio: 1.0,
+                        ),
                 ),
               ),
             ),
@@ -1084,6 +1334,17 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
       case "ilustrativo": return "cartoonish";
       case "elegante": return "realista";
       case "tech": return "dinámico";
+      case "vibrante": return "dinámico";
+      case "profesional": return "realista";
+      case "creativo": return "cartoonish";
+      case "audaz": return "dinámico";
+      case "suave": return "realista";
+      case "geometrico": return "dinámico";
+      case "abstracto": return "cartoonish";
+      case "cinematico": return "realista";
+      case "retro": return "cartoonish";
+      case "futurista": return "dinámico";
+      case "naturaleza": return "realista";
       default: return "realista";
     }
   }
@@ -1092,10 +1353,20 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedType == PreviewType.reel) {
-      // Crear reel de forma asíncrona - no bloquear UI
-      _createReelAsync();
+      // Guardar el tema para el monitoreo
+      _currentReelTopic = _topicController.text.trim();
+      
+      // Crear reel normalmente
+      final reelRequest = CreateReelRequest(
+        prompt: _currentReelTopic!,
+        accent: _selectedAccent,
+        style: _mapReelStyleToBackend(_selectedReelStyle),
+        duration: _selectedDuration,
+        targetAudience: _selectedAudience.value,
+      );
+      ref.read(previewCreationProvider.notifier).createReelPreview(reelRequest);
     } else {
-      // Crear post o story con campos normales
+      // Crear post o story
       final request = CreatePreviewRequest(
         topic: _topicController.text.trim(),
         style: _selectedStyle.value,
@@ -1111,91 +1382,28 @@ class _PreviewCreationPageState extends ConsumerState<PreviewCreationPage>
     }
   }
 
-  Future<void> _createReelAsync() async {
-    try {
-      // Mostrar mensaje de inicio
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                ),
-                SizedBox(width: 12),
-                Text('🎬 Generando tu Reel... Esto puede tomar unos minutos'),
-              ],
-            ),
-            backgroundColor: Color(0xFF8B5CF6),
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-
-      // Crear reel en background
-      final reelRequest = CreateReelRequest(
-        prompt: _topicController.text.trim(),
-        accent: _selectedAccent,
-        style: _mapReelStyleToBackend(_selectedReelStyle),
-        duration: _selectedDuration,
-        targetAudience: _selectedAudience.value,
-      );
-
-      // Ejecutar en background sin bloquear UI
-      ref.read(previewCreationProvider.notifier).createReelPreview(reelRequest);
-      
-      // Escuchar el estado del provider para notificaciones precisas
-      ref.listen<PreviewCreationState>(previewCreationProvider, (previous, next) {
-        if (mounted) {
-          if (next is PreviewCreationSuccess) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.white),
-                    SizedBox(width: 8),
-                    Text('¡Tu Reel está listo! Ve a "Mis Contenidos" para verlo'),
-                  ],
-                ),
-                backgroundColor: const Color(0xFF10B981),
-                duration: const Duration(seconds: 4),
-                action: SnackBarAction(
-                  label: 'Ver',
-                  textColor: Colors.white,
-                  onPressed: () {
-                    // Navegar a la sección de contenidos
-                    // Esto se puede implementar si es necesario
-                  },
-                ),
-              ),
-            );
-          } else if (next is PreviewCreationError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Error al generar Reel: ${next.message}'),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        }
-      });
-      
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al generar Reel: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+  Widget _getTypeIcon(PreviewType type, bool isSelected) {
+    String iconPath;
+    switch (type) {
+      case PreviewType.post:
+        iconPath = 'assets/icons/media.svg';
+        break;
+      case PreviewType.story:
+        iconPath = 'assets/icons/storie.svg';
+        break;
+      case PreviewType.reel:
+        iconPath = 'assets/icons/reel.svg';
+        break;
     }
+    
+    return SvgPicture.asset(
+      iconPath,
+      width: 24,
+      height: 24,
+      colorFilter: ColorFilter.mode(
+        isSelected ? Colors.white : Colors.grey.shade600,
+        BlendMode.srcIn,
+      ),
+    );
   }
 }

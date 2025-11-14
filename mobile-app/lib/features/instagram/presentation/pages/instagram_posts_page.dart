@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../shared/widgets/video_thumbnail_widget.dart';
 import '../../data/models/instagram_post_entity.dart';
 import '../providers/instagram_posts_provider.dart';
 import 'instagram_comments_page.dart';
@@ -19,9 +20,9 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
   @override
   void initState() {
     super.initState();
-    // Cargar posts cuando se inicializa la página
+    // Cargar posts solo si no se han cargado antes
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(instagramPostsNotifierProvider.notifier).loadPosts();
+      ref.read(instagramPostsNotifierProvider.notifier).loadPostsIfNeeded();
     });
   }
 
@@ -130,288 +131,186 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
   Widget build(BuildContext context) {
     final postsState = ref.watch(instagramPostsNotifierProvider);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-              child: Row(
-                children: [
-                  // Instagram Icon
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF833AB4), Color(0xFFE1306C), Color(0xFFFD1D1D)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Icon(
-                      Icons.camera_alt,
-                      color: Colors.white,
-                      size: 20,
-                    ),
+    return Column(
+      children: [
+          // Search Bar
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white, // Fondo blanco para light mode
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFFE5E7EB), // Borde gris claro
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
                   ),
-                  const SizedBox(width: 12),
-                  // Title and Subtitle
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(
+                  color: AppConstants.textPrimary, // Texto negro
+                  fontSize: 16,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Buscar posts...',
+                  hintStyle: const TextStyle(
+                    color: Color(0xFF9CA3AF), // Gris claro para hint
+                    fontSize: 16,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: _isSearching 
+                        ? AppConstants.primaryColor
+                        : const Color(0xFF9CA3AF),
+                    size: 20,
+                  ),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(
+                            Icons.clear,
+                            color: Color(0xFF9CA3AF),
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {
+                              _isSearching = false;
+                            });
+                            ref.read(instagramPostsNotifierProvider.notifier).refreshPosts();
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _isSearching = value.trim().isNotEmpty;
+                  });
+                  if (value.trim().isNotEmpty) {
+                    ref.read(instagramPostsNotifierProvider.notifier).searchPosts(query: value);
+                  } else {
+                    ref.read(instagramPostsNotifierProvider.notifier).refreshPosts();
+                  }
+                },
+              ),
+            ),
+          ),
+          
+          // Posts List
+          Expanded(
+            child: postsState.when(
+              initial: () => const Center(
+                child: Text(
+                  'Cargando posts...',
+                  style: TextStyle(color: AppConstants.textSecondary),
+                ),
+              ),
+              loading: () => const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+                ),
+              ),
+              loaded: (posts, pagination) => posts.isEmpty
+                  ? _buildEmptyState()
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      itemCount: posts.length,
+                      itemBuilder: (context, index) {
+                        final post = posts[index];
+                        return _InstagramPostTile(
+                          post: post,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => InstagramCommentsPage(post: post),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+              error: (error) => Column(
+                children: [
+                  // Offline Banner
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFF59E0B).withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
                       children: [
-                        const Text(
-                          'Posts de Instagram',
-                          style: TextStyle(
-                            color: Color(0xFFE5E7EB),
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                        const Icon(
+                          Icons.wifi_off,
+                          color: Color(0xFFF59E0B),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'API no disponible - Mostrando posts de ejemplo',
+                            style: TextStyle(
+                              color: Color(0xFFF59E0B),
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                        Text(
-                          'Gestiona tus publicaciones',
-                          style: const TextStyle(
-                            color: Color(0xFF9CA3AF),
-                            fontSize: 14,
+                        TextButton(
+                          onPressed: () {
+                            ref.read(instagramPostsNotifierProvider.notifier).refreshPosts();
+                          },
+                          child: const Text(
+                            'Reintentar',
+                            style: TextStyle(color: Color(0xFFF59E0B)),
                           ),
                         ),
                       ],
                     ),
                   ),
-                        // Connection Status and Refresh Button
-                        Row(
-                          children: [
-                            // Connection Status Indicator
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: postsState.maybeWhen(
-                                  loaded: (_, __) => const Color(0xFF10B981), // Verde cuando hay datos
-                                  error: (_) => const Color(0xFFEF4444), // Rojo cuando hay error
-                                  orElse: () => const Color(0xFFF59E0B), // Amarillo cuando está cargando
-                                ),
-                                shape: BoxShape.circle,
+                  // Demo Posts
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      itemCount: _getDemoPosts().length,
+                      itemBuilder: (context, index) {
+                        final post = _getDemoPosts()[index];
+                        return _InstagramPostTile(
+                          post: post,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => InstagramCommentsPage(post: post),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Refresh Button
-                            Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1F1F1F),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFF2D2D2D),
-                                  width: 1,
-                                ),
-                              ),
-                              child: IconButton(
-                                icon: postsState.maybeWhen(
-                                  loading: () => const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF9CA3AF)),
-                                    ),
-                                  ),
-                                  orElse: () => const Icon(
-                                    Icons.refresh,
-                                    color: Color(0xFF9CA3AF),
-                                    size: 20,
-                                  ),
-                                ),
-                                onPressed: postsState.maybeWhen(
-                                  loading: () => null,
-                                  orElse: () => () {
-                                    ref.read(instagramPostsNotifierProvider.notifier).refreshPosts();
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
                 ],
               ),
             ),
-            
-            // Search Bar
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: const Color(0xFF2D2D2D),
-                    width: 1,
-                  ),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  style: const TextStyle(
-                    color: Color(0xFFE5E7EB),
-                    fontSize: 16,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Buscar posts...',
-                    hintStyle: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontSize: 16,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search,
-                      color: _isSearching 
-                          ? const Color(0xFF8B5CF6)
-                          : const Color(0xFF6B7280),
-                      size: 20,
-                    ),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.clear,
-                              color: Color(0xFF6B7280),
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {
-                                _isSearching = false;
-                              });
-                              ref.read(instagramPostsNotifierProvider.notifier).refreshPosts();
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _isSearching = value.trim().isNotEmpty;
-                    });
-                    if (value.trim().isNotEmpty) {
-                      ref.read(instagramPostsNotifierProvider.notifier).searchPosts(query: value);
-                    } else {
-                      ref.read(instagramPostsNotifierProvider.notifier).refreshPosts();
-                    }
-                  },
-                ),
-              ),
-            ),
-            
-            // Posts List
-            Expanded(
-              child: postsState.when(
-                initial: () => const Center(
-                  child: Text(
-                    'Cargando posts...',
-                    style: TextStyle(color: Color(0xFF9CA3AF)),
-                  ),
-                ),
-                loading: () => const Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
-                  ),
-                ),
-                loaded: (posts, pagination) => posts.isEmpty
-                    ? _buildEmptyState()
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                        itemCount: posts.length,
-                        itemBuilder: (context, index) {
-                          final post = posts[index];
-                          return _InstagramPostTile(
-                            post: post,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => InstagramCommentsPage(post: post),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                error: (error) => Column(
-                  children: [
-                    // Offline Banner
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFFF59E0B).withOpacity(0.3),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.wifi_off,
-                            color: Color(0xFFF59E0B),
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'API no disponible - Mostrando posts de ejemplo',
-                              style: TextStyle(
-                                color: Color(0xFFF59E0B),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              ref.read(instagramPostsNotifierProvider.notifier).refreshPosts();
-                            },
-                            child: const Text(
-                              'Reintentar',
-                              style: TextStyle(color: Color(0xFFF59E0B)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Demo Posts
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                        itemCount: _getDemoPosts().length,
-                        itemBuilder: (context, index) {
-                          final post = _getDemoPosts()[index];
-                          return _InstagramPostTile(
-                            post: post,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => InstagramCommentsPage(post: post),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        ],
     );
   }
 
@@ -423,13 +322,13 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: const Color(0xFF1F1F1F),
+              color: const Color(0xFFF3F4F6), // Gris claro para light mode
               borderRadius: BorderRadius.circular(50),
             ),
             child: const Icon(
               Icons.photo_library_outlined,
               size: 48,
-              color: Color(0xFF6B7280),
+              color: AppConstants.textSecondary,
             ),
           ),
           const SizedBox(height: 24),
@@ -438,7 +337,7 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: Color(0xFFE5E7EB),
+              color: AppConstants.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
@@ -446,7 +345,7 @@ class _InstagramPostsPageState extends ConsumerState<InstagramPostsPage> {
             'Los posts de Instagram aparecerán aquí',
             style: TextStyle(
               fontSize: 14,
-              color: Color(0xFF9CA3AF),
+              color: AppConstants.textSecondary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -470,15 +369,15 @@ class _InstagramPostTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white, // Fondo blanco para light mode
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
-          width: 0.5,
+          color: const Color(0xFFE5E7EB), // Borde gris claro
+          width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withOpacity(0.05), // Sombra suave para light mode
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -517,22 +416,48 @@ class _InstagramPostTile extends StatelessWidget {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _truncateText(post.caption, 50),
-                        style: const TextStyle(
-                          color: Color(0xFFE5E7EB),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                        children: [
+                          Row(
+                            children: [
+                              if (_isVideoContent(post)) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    'REEL',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  _truncateText(post.caption, 50),
+                                  style: const TextStyle(
+                                    color: AppConstants.textPrimary, // Texto negro
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                       const SizedBox(height: 4),
                       Text(
                         _formatTimestamp(post.timestamp),
                         style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
+                          color: AppConstants.textSecondary, // Gris medio
                           fontSize: 12,
                         ),
                       ),
@@ -548,7 +473,7 @@ class _InstagramPostTile extends StatelessWidget {
                           Text(
                             '${post.commentsCount ?? 0} comentarios',
                             style: const TextStyle(
-                              color: Color(0xFF9CA3AF),
+                              color: AppConstants.textSecondary,
                               fontSize: 12,
                             ),
                           ),
@@ -562,7 +487,7 @@ class _InstagramPostTile extends StatelessWidget {
                           Text(
                             '${post.likesCount ?? 0} likes',
                             style: const TextStyle(
-                              color: Color(0xFF9CA3AF),
+                              color: AppConstants.textSecondary,
                               fontSize: 12,
                             ),
                           ),
@@ -574,7 +499,7 @@ class _InstagramPostTile extends StatelessWidget {
                 // Arrow
                 const Icon(
                   Icons.arrow_forward_ios,
-                  color: Color(0xFF6B7280),
+                  color: AppConstants.textSecondary,
                   size: 16,
                 ),
               ],
@@ -608,79 +533,139 @@ class _InstagramPostTile extends StatelessWidget {
   }
 
   Widget _buildMediaPreview(InstagramPostEntity post) {
-    // Si es un Reel, mostrar icono de video
-    if (post.mediaType == 'VIDEO' || post.caption.toLowerCase().contains('reel')) {
-      return Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(
-          Icons.play_circle_filled,
-          color: Colors.white,
-          size: 24,
-        ),
-      );
+    // Determinar si es video o imagen basado en múltiples criterios
+    final isVideo = _isVideoContent(post);
+    
+    // Prioridad: imageUrl para imágenes, videoUrl para videos, luego mediaUrl
+    String? mediaUrl;
+    if (isVideo) {
+      // Para videos, priorizar videoUrl
+      if (post.videoUrl != null && post.videoUrl!.isNotEmpty && post.videoUrl!.startsWith('http')) {
+        mediaUrl = post.videoUrl;
+      } else if (post.mediaUrl.isNotEmpty && post.mediaUrl.startsWith('http')) {
+        mediaUrl = post.mediaUrl;
+      }
+    } else {
+      // Para imágenes, priorizar imageUrl
+      if (post.imageUrl.isNotEmpty && post.imageUrl.startsWith('http')) {
+        mediaUrl = post.imageUrl;
+      } else if (post.mediaUrl.isNotEmpty && post.mediaUrl.startsWith('http')) {
+        mediaUrl = post.mediaUrl;
+      }
     }
 
-    // Si es una imagen, intentar cargar la imagen
-    if (post.imageUrl.isNotEmpty && post.imageUrl.startsWith('http')) {
-      return Image.network(
-        post.imageUrl,
-        width: 60,
-        height: 60,
-        fit: BoxFit.cover,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1F1F1F),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+    // Si tenemos una URL válida, intentar cargar
+    if (mediaUrl != null) {
+      if (isVideo) {
+        // Para videos, usar VideoThumbnailWidget
+        return VideoThumbnailWidget(
+          videoUrl: mediaUrl,
+          width: 60,
+          height: 60,
+        );
+      } else {
+        // Para imágenes, intentar cargar la imagen
+        return Image.network(
+          mediaUrl,
+          width: 60,
+          height: 60,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1F1F1F),
+                borderRadius: BorderRadius.circular(12),
               ),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          print('Error al cargar imagen: ${post.imageUrl} - $error');
-          return _buildPlaceholder(post.mediaType);
-        },
-      );
+              child: const Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('Error al cargar imagen: $mediaUrl - $error');
+            return _buildPlaceholder(false);
+          },
+        );
+      }
     }
 
     // Si no hay URL válida, mostrar placeholder
-    return _buildPlaceholder(post.mediaType);
+    return _buildPlaceholder(isVideo);
   }
 
-  Widget _buildPlaceholder(String mediaType) {
-    if (mediaType == 'VIDEO' || mediaType.toLowerCase().contains('video')) {
+  bool _isVideoContent(InstagramPostEntity post) {
+    // Verificar mediaType
+    if (post.mediaType == 'VIDEO' || post.mediaType == 'REEL') {
+      return true;
+    }
+    
+    // Verificar si el caption contiene "reel"
+    if (post.caption.toLowerCase().contains('reel')) {
+      return true;
+    }
+    
+    // Verificar extensiones de archivo en las URLs
+    final urls = <String>[];
+    if (post.imageUrl.isNotEmpty) urls.add(post.imageUrl);
+    if (post.videoUrl != null && post.videoUrl!.isNotEmpty) urls.add(post.videoUrl!);
+    if (post.mediaUrl.isNotEmpty) urls.add(post.mediaUrl);
+    
+    for (final url in urls) {
+      if (url.toLowerCase().contains('.mp4') || 
+          url.toLowerCase().contains('.mov') || 
+          url.toLowerCase().contains('.avi') ||
+          url.toLowerCase().contains('.webm')) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  Widget _buildPlaceholder(bool isVideo) {
+    if (isVideo) {
       return Container(
         width: 60,
         height: 60,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF833AB4), Color(0xFFE1306C)],
+            colors: [Color(0xFF833AB4), Color(0xFFE1306C), Color(0xFFFD1D1D)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFE1306C).withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: const Icon(
-          Icons.play_circle_filled,
-          color: Colors.white,
-          size: 24,
+        child: const Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.play_circle_filled,
+              color: Colors.white,
+              size: 28,
+            ),
+            Positioned(
+              bottom: 2,
+              right: 2,
+              child: Icon(
+                Icons.video_library,
+                color: Colors.white,
+                size: 12,
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -695,6 +680,13 @@ class _InstagramPostTile extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF833AB4).withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: const Icon(
         Icons.image,

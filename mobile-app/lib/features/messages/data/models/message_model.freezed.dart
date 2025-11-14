@@ -22,7 +22,8 @@ MessageModel _$MessageModelFromJson(Map<String, dynamic> json) {
 /// @nodoc
 mixin _$MessageModel {
   String get message => throw _privateConstructorUsedError;
-  String get recipientId => throw _privateConstructorUsedError;
+  String? get recipientId => throw _privateConstructorUsedError;
+  String? get conversationId => throw _privateConstructorUsedError;
   String? get senderName => throw _privateConstructorUsedError;
 
   /// Serializes this MessageModel to a JSON map.
@@ -42,7 +43,12 @@ abstract class $MessageModelCopyWith<$Res> {
     $Res Function(MessageModel) then,
   ) = _$MessageModelCopyWithImpl<$Res, MessageModel>;
   @useResult
-  $Res call({String message, String recipientId, String? senderName});
+  $Res call({
+    String message,
+    String? recipientId,
+    String? conversationId,
+    String? senderName,
+  });
 }
 
 /// @nodoc
@@ -61,7 +67,8 @@ class _$MessageModelCopyWithImpl<$Res, $Val extends MessageModel>
   @override
   $Res call({
     Object? message = null,
-    Object? recipientId = null,
+    Object? recipientId = freezed,
+    Object? conversationId = freezed,
     Object? senderName = freezed,
   }) {
     return _then(
@@ -70,10 +77,14 @@ class _$MessageModelCopyWithImpl<$Res, $Val extends MessageModel>
                 ? _value.message
                 : message // ignore: cast_nullable_to_non_nullable
                       as String,
-            recipientId: null == recipientId
+            recipientId: freezed == recipientId
                 ? _value.recipientId
                 : recipientId // ignore: cast_nullable_to_non_nullable
-                      as String,
+                      as String?,
+            conversationId: freezed == conversationId
+                ? _value.conversationId
+                : conversationId // ignore: cast_nullable_to_non_nullable
+                      as String?,
             senderName: freezed == senderName
                 ? _value.senderName
                 : senderName // ignore: cast_nullable_to_non_nullable
@@ -93,7 +104,12 @@ abstract class _$$MessageModelImplCopyWith<$Res>
   ) = __$$MessageModelImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String message, String recipientId, String? senderName});
+  $Res call({
+    String message,
+    String? recipientId,
+    String? conversationId,
+    String? senderName,
+  });
 }
 
 /// @nodoc
@@ -111,7 +127,8 @@ class __$$MessageModelImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? message = null,
-    Object? recipientId = null,
+    Object? recipientId = freezed,
+    Object? conversationId = freezed,
     Object? senderName = freezed,
   }) {
     return _then(
@@ -120,10 +137,14 @@ class __$$MessageModelImplCopyWithImpl<$Res>
             ? _value.message
             : message // ignore: cast_nullable_to_non_nullable
                   as String,
-        recipientId: null == recipientId
+        recipientId: freezed == recipientId
             ? _value.recipientId
             : recipientId // ignore: cast_nullable_to_non_nullable
-                  as String,
+                  as String?,
+        conversationId: freezed == conversationId
+            ? _value.conversationId
+            : conversationId // ignore: cast_nullable_to_non_nullable
+                  as String?,
         senderName: freezed == senderName
             ? _value.senderName
             : senderName // ignore: cast_nullable_to_non_nullable
@@ -138,7 +159,8 @@ class __$$MessageModelImplCopyWithImpl<$Res>
 class _$MessageModelImpl implements _MessageModel {
   const _$MessageModelImpl({
     required this.message,
-    required this.recipientId,
+    this.recipientId,
+    this.conversationId,
     this.senderName,
   });
 
@@ -148,13 +170,15 @@ class _$MessageModelImpl implements _MessageModel {
   @override
   final String message;
   @override
-  final String recipientId;
+  final String? recipientId;
+  @override
+  final String? conversationId;
   @override
   final String? senderName;
 
   @override
   String toString() {
-    return 'MessageModel(message: $message, recipientId: $recipientId, senderName: $senderName)';
+    return 'MessageModel(message: $message, recipientId: $recipientId, conversationId: $conversationId, senderName: $senderName)';
   }
 
   @override
@@ -165,14 +189,21 @@ class _$MessageModelImpl implements _MessageModel {
             (identical(other.message, message) || other.message == message) &&
             (identical(other.recipientId, recipientId) ||
                 other.recipientId == recipientId) &&
+            (identical(other.conversationId, conversationId) ||
+                other.conversationId == conversationId) &&
             (identical(other.senderName, senderName) ||
                 other.senderName == senderName));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, message, recipientId, senderName);
+  int get hashCode => Object.hash(
+    runtimeType,
+    message,
+    recipientId,
+    conversationId,
+    senderName,
+  );
 
   /// Create a copy of MessageModel
   /// with the given fields replaced by the non-null parameter values.
@@ -191,7 +222,8 @@ class _$MessageModelImpl implements _MessageModel {
 abstract class _MessageModel implements MessageModel {
   const factory _MessageModel({
     required final String message,
-    required final String recipientId,
+    final String? recipientId,
+    final String? conversationId,
     final String? senderName,
   }) = _$MessageModelImpl;
 
@@ -201,7 +233,9 @@ abstract class _MessageModel implements MessageModel {
   @override
   String get message;
   @override
-  String get recipientId;
+  String? get recipientId;
+  @override
+  String? get conversationId;
   @override
   String? get senderName;
 

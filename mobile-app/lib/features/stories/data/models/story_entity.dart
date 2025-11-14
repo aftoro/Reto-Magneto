@@ -21,9 +21,13 @@ class StoryEntity with _$StoryEntity {
       _$StoryEntityFromJson(json);
 
   factory StoryEntity.fromApiJson(Map<String, dynamic> data) {
+    final imageUrl = data['image_url']?.toString() ?? '';
+    print('📸 StoryEntity - image_url recibido: $imageUrl');
+    print('📸 StoryEntity - datos completos: $data');
+    
     return StoryEntity(
       id: data['id']?.toString() ?? '',
-      imageUrl: data['image_url']?.toString() ?? '',
+      imageUrl: imageUrl,
       aiGenerated: data['ai_generated'] as bool? ?? false,
       aiPrompt: data['ai_prompt']?.toString(),
       status: data['status']?.toString() ?? 'created',
@@ -51,8 +55,10 @@ class StoriesResponse with _$StoriesResponse {
   factory StoriesResponse.fromJson(Map<String, dynamic> json) =>
       _$StoriesResponseFromJson(json);
 
-  factory StoriesResponse.fromApiJson(Map<String, dynamic> data) {
+  factory StoriesResponse.fromApiJson(Map<String, dynamic> response) {
     try {
+      // El backend devuelve { success: true, data: { stories: [], total: 0, ... } }
+      final data = response['data'] as Map<String, dynamic>? ?? response;
       final storiesList = data['stories'] as List? ?? [];
       final stories = <StoryEntity>[];
       

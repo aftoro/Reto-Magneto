@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../data/models/analytics_entity.dart';
 
@@ -15,10 +17,10 @@ class TopPositionsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingM),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white, // Fondo blanco para light mode
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: const Color(0xFFE5E7EB), // Borde gris claro
           width: 1,
         ),
       ),
@@ -27,16 +29,20 @@ class TopPositionsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.work_outline,
-                color: Color(0xFF10B981),
-                size: 20,
+              SvgPicture.asset(
+                'assets/icons/maletin.svg',
+                width: 20,
+                height: 20,
+                colorFilter: ColorFilter.mode(
+                  AppConstants.successColor,
+                  BlendMode.srcIn,
+                ),
               ),
               const SizedBox(width: AppConstants.spacingS),
               const Text(
                 'Posiciones Más Demandadas',
                 style: TextStyle(
-                  color: Color(0xFFE5E7EB),
+                  color: AppConstants.textPrimary, // Texto negro para light mode
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
@@ -63,7 +69,7 @@ class TopPositionsCard extends StatelessWidget {
             child: Text(
               position.position,
               style: const TextStyle(
-                color: Color(0xFFE5E7EB),
+                color: AppConstants.textPrimary, // Texto negro para light mode
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -74,7 +80,7 @@ class TopPositionsCard extends StatelessWidget {
             child: Container(
               height: 8,
               decoration: BoxDecoration(
-                color: const Color(0xFF2D2D2D),
+                color: const Color(0xFFF3F4F6), // Gris claro para fondo de barra en light mode
                 borderRadius: BorderRadius.circular(4),
               ),
               child: FractionallySizedBox(
@@ -95,7 +101,7 @@ class TopPositionsCard extends StatelessWidget {
           Text(
             '${position.count}',
             style: const TextStyle(
-              color: Color(0xFF9CA3AF),
+              color: AppConstants.textSecondary, // Gris medio para light mode
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),

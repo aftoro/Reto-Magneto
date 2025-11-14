@@ -193,14 +193,32 @@ class _ReelPreviewPageState extends ConsumerState<ReelPreviewPage> {
     setState(() => _isPublishing = true);
 
     try {
-      final request = PublishPreviewRequest(
-        finalCaption: widget.preview.caption,
-      );
+      // Calcular caption efectivo: usar el plano; si viene vacío, intentar metadata.suggested_caption
+      String? effectiveCaption = widget.preview.caption.trim().isNotEmpty ? widget.preview.caption.trim() : null;
+      if (effectiveCaption == null && widget.preview.metadata != null) {
+        final meta = widget.preview.metadata!;
+        if (meta['suggested_caption'] is Map<String, dynamic>) {
+          final sc = meta['suggested_caption'] as Map<String, dynamic>;
+          if (sc['captions'] is List && (sc['captions'] as List).isNotEmpty) {
+            final first = (sc['captions'] as List).first;
+            if (first is Map<String, dynamic>) {
+              effectiveCaption = (first['content']?.toString() ?? '').trim();
+            }
+          }
+        }
+      }
+
+      final request = PublishPreviewRequest(finalCaption: effectiveCaption);
 
       await ref.read(previewDetailsProvider.notifier).publishPreview(
         widget.preview.id,
         request,
       );
+
+      // Actualizar estado ANTES de navegar para evitar que se quede cargando
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -218,17 +236,16 @@ class _ReelPreviewPageState extends ConsumerState<ReelPreviewPage> {
         );
       }
     } catch (e) {
+      // Actualizar estado en caso de error también
       if (mounted) {
+        setState(() => _isPublishing = false);
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al publicar: $e'),
             backgroundColor: Colors.red,
           ),
         );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isPublishing = false);
       }
     }
   }

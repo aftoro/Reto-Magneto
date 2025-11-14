@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../data/models/instagram_post_entity.dart';
 import '../providers/instagram_posts_provider.dart';
@@ -21,9 +23,9 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
   @override
   void initState() {
     super.initState();
-    // Cargar comentarios cuando se inicializa la página
+    // Cargar comentarios solo si no se han cargado antes
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(instagramCommentsNotifierProvider.notifier).loadComments(widget.post.id);
+      ref.read(instagramCommentsNotifierProvider.notifier).loadCommentsIfNeeded(widget.post.id);
     });
   }
 
@@ -32,46 +34,54 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
     final commentsState = ref.watch(instagramCommentsNotifierProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
+        leading: IconButton(
+          icon: Icon(
+            CupertinoIcons.arrow_left,
+            color: AppConstants.textPrimary,
+          ),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Comentarios',
-              style: TextStyle(
+              style: GoogleFonts.poppins(
+                color: AppConstants.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
             ),
             Text(
               '${widget.post.commentsCount ?? 0} comentarios',
-              style: const TextStyle(
+              style: GoogleFonts.poppins(
+                color: AppConstants.textSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
               ),
             ),
           ],
         ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF833AB4), Color(0xFFE1306C), Color(0xFFFD1D1D)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+        surfaceTintColor: Colors.transparent,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: AppConstants.textTertiary.withOpacity(0.2),
           ),
-        ),
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: Icon(
+              CupertinoIcons.refresh,
+              color: AppConstants.textSecondary,
+            ),
             onPressed: () {
               ref.read(instagramCommentsNotifierProvider.notifier).refreshComments(widget.post.id);
             },
@@ -84,10 +94,10 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
+              color: Colors.white,
               border: Border(
                 bottom: BorderSide(
-                  color: const Color(0xFF2D2D2D),
+                  color: Colors.grey.shade200,
                   width: 1,
                 ),
               ),
@@ -143,8 +153,8 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
                     children: [
                       Text(
                         _truncateText(widget.post.caption, 60),
-                        style: const TextStyle(
-                          color: Color(0xFFE5E7EB),
+                        style: GoogleFonts.poppins(
+                          color: AppConstants.textPrimary,
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                         ),
@@ -154,8 +164,8 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
                       const SizedBox(height: 4),
                       Text(
                         _formatTimestamp(widget.post.timestamp),
-                        style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
+                        style: GoogleFonts.poppins(
+                          color: AppConstants.textSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -169,15 +179,17 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
           // Comments List
           Expanded(
             child: commentsState.when(
-              initial: () => const Center(
+              initial: () => Center(
                 child: Text(
                   'Cargando comentarios...',
-                  style: TextStyle(color: Color(0xFF9CA3AF)),
+                  style: GoogleFonts.poppins(
+                    color: AppConstants.textSecondary,
+                  ),
                 ),
               ),
               loading: () => const Center(
                 child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppConstants.primaryColor),
                 ),
               ),
               loaded: (comments, count) => comments.isEmpty
@@ -191,40 +203,47 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
                       },
                     ),
               error: (error) => Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppConstants.errorColor,
-                    ),
-                    const SizedBox(height: AppConstants.spacingM),
-                    const Text(
-                      'Error al cargar comentarios',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFE5E7EB),
+                child: Padding(
+                  padding: const EdgeInsets.all(40),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        CupertinoIcons.exclamationmark_triangle,
+                        size: 64,
+                        color: AppConstants.errorColor,
                       ),
-                    ),
-                    const SizedBox(height: AppConstants.spacingS),
-                    Text(
-                      error,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF9CA3AF),
+                      const SizedBox(height: AppConstants.spacingM),
+                      Text(
+                        'Error al cargar comentarios',
+                        style: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: AppConstants.textPrimary,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppConstants.spacingL),
-                    ElevatedButton(
-                      onPressed: () {
-                        ref.read(instagramCommentsNotifierProvider.notifier).refreshComments(widget.post.id);
-                      },
-                      child: const Text('Reintentar'),
-                    ),
-                  ],
+                      const SizedBox(height: AppConstants.spacingS),
+                      Text(
+                        error,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: AppConstants.textSecondary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppConstants.spacingL),
+                      ElevatedButton(
+                        onPressed: () {
+                          ref.read(instagramCommentsNotifierProvider.notifier).refreshComments(widget.post.id);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppConstants.primaryColor,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -242,30 +261,30 @@ class _InstagramCommentsPageState extends ConsumerState<InstagramCommentsPage> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: const Color(0xFF1F1F1F),
+              color: AppConstants.primaryColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(50),
             ),
-            child: const Icon(
-              Icons.chat_bubble_outline,
+            child: Icon(
+              CupertinoIcons.chat_bubble,
               size: 48,
-              color: Color(0xFF6B7280),
+              color: AppConstants.primaryColor,
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'No hay comentarios',
-            style: TextStyle(
+            style: GoogleFonts.poppins(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: Color(0xFFE5E7EB),
+              color: AppConstants.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Los comentarios aparecerán aquí',
-            style: TextStyle(
+            style: GoogleFonts.poppins(
               fontSize: 14,
-              color: Color(0xFF9CA3AF),
+              color: AppConstants.textSecondary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -349,13 +368,13 @@ class _CommentTile extends StatelessWidget {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: comment.isAiResponse
-                        ? const Color(0xFF1F1F1F)
-                        : const Color(0xFF2A2A2A),
+                        ? AppConstants.primaryColor.withOpacity(0.05)
+                        : Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: comment.isAiResponse
-                          ? const Color(0xFF8B5CF6).withOpacity(0.3)
-                          : const Color(0xFF2D2D2D),
+                          ? AppConstants.primaryColor.withOpacity(0.2)
+                          : Colors.grey.shade200,
                       width: 1,
                     ),
                   ),
@@ -366,10 +385,10 @@ class _CommentTile extends StatelessWidget {
                         children: [
                           Text(
                             comment.username,
-                            style: TextStyle(
+                            style: GoogleFonts.poppins(
                               color: comment.isAiResponse
-                                  ? const Color(0xFF8B5CF6)
-                                  : const Color(0xFFE5E7EB),
+                                  ? AppConstants.primaryColor
+                                  : AppConstants.textPrimary,
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
@@ -398,8 +417,8 @@ class _CommentTile extends StatelessWidget {
                           const Spacer(),
                           Text(
                             _formatTimestamp(comment.createdAt),
-                            style: const TextStyle(
-                              color: Color(0xFF9CA3AF),
+                            style: GoogleFonts.poppins(
+                              color: AppConstants.textSecondary,
                               fontSize: 12,
                             ),
                           ),
@@ -410,17 +429,17 @@ class _CommentTile extends StatelessWidget {
                         data: comment.commentText,
                         styleSheet: MarkdownStyleSheet(
                           p: TextStyle(
-                            color: const Color(0xFFE5E7EB),
+                            color: AppConstants.textPrimary,
                             fontSize: 14,
                             height: 1.4,
                           ),
-                          strong: const TextStyle(
-                            color: Color(0xFFFFFFFF),
+                          strong: TextStyle(
+                            color: AppConstants.textPrimary,
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
                           ),
-                          em: const TextStyle(
-                            color: Color(0xFFE5E7EB),
+                          em: TextStyle(
+                            color: AppConstants.textPrimary,
                             fontStyle: FontStyle.italic,
                             fontSize: 14,
                           ),
@@ -515,13 +534,13 @@ class _ReplyTile extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: reply.isAiResponse
-                    ? const Color(0xFF1F1F1F)
-                    : const Color(0xFF2A2A2A),
+                    ? AppConstants.primaryColor.withOpacity(0.05)
+                    : Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: reply.isAiResponse
-                      ? const Color(0xFF8B5CF6).withOpacity(0.3)
-                      : const Color(0xFF2D2D2D),
+                      ? AppConstants.primaryColor.withOpacity(0.2)
+                      : Colors.grey.shade200,
                   width: 1,
                 ),
               ),
@@ -532,10 +551,10 @@ class _ReplyTile extends StatelessWidget {
                     children: [
                       Text(
                         reply.username,
-                        style: TextStyle(
+                        style: GoogleFonts.poppins(
                           color: reply.isAiResponse
-                              ? const Color(0xFF8B5CF6)
-                              : const Color(0xFFE5E7EB),
+                              ? AppConstants.primaryColor
+                              : AppConstants.textPrimary,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -564,8 +583,8 @@ class _ReplyTile extends StatelessWidget {
                       const Spacer(),
                       Text(
                         _formatTimestamp(reply.createdAt),
-                        style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
+                        style: GoogleFonts.poppins(
+                          color: AppConstants.textSecondary,
                           fontSize: 10,
                         ),
                       ),
@@ -574,8 +593,8 @@ class _ReplyTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     reply.commentText,
-                    style: const TextStyle(
-                      color: Color(0xFFE5E7EB),
+                    style: GoogleFonts.poppins(
+                      color: AppConstants.textPrimary,
                       fontSize: 12,
                       height: 1.3,
                     ),

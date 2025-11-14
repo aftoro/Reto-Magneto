@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../data/models/preview_entity.dart';
 import '../providers/preview_provider.dart';
 import '../widgets/media_preview_widget.dart';
@@ -38,6 +41,11 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
   List<String> _selectedHashtags = [];
   PreviewEntity? _updatedPreview;
   bool _isUpdatingPreview = false;
+  double _bottomSheetHeight = 400.0; // Altura inicial del bottom sheet
+  double _minSheetHeight = 70.0; // Altura mínima (solo handle y título)
+  double _maxSheetHeight = 0.0; // Se calculará en build
+  double _dragStartHeight = 0.0;
+  double _dragOffset = 0.0;
 
   @override
   void initState() {
@@ -104,14 +112,19 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
       }
     });
     
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: _buildCustomLayout(),
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppConstants.backgroundColor, // Fondo blanco para light mode
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: SlideTransition(
+              position: _slideAnimation,
+              child: _buildCustomLayout(),
+            ),
           ),
         ),
       ),
@@ -119,154 +132,433 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
   }
 
   Widget _buildCustomLayout() {
-    return Column(
-      children: [
-        // Custom Header
-        _buildCustomHeader(),
+    // Calcular altura máxima disponible (90% de la pantalla menos el header)
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Detectar si estamos en web
+        final isWeb = MediaQuery.of(context).size.width > 600;
         
-        // Main Content
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Si la pantalla es muy pequeña, usar layout vertical
-              if (constraints.maxWidth < 800) {
-                return Column(
+        // Verificar que constraints sean válidos
+        if (constraints.maxHeight.isInfinite || constraints.maxHeight <= 0) {
+          _maxSheetHeight = 600.0; // Fallback
+        } else {
+          _maxSheetHeight = constraints.maxHeight * 0.9;
+        }
+        
+        // En web, usar un layout diferente con el preview centrado y el bottom sheet a un lado o abajo
+        if (isWeb) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Preview Section - Ocupa el espacio disponible
+              Expanded(
+                flex: 2,
+                child: Column(
                   children: [
-                    // Instagram Post Section
+                    // Custom Header
+                    _buildCustomHeader(),
+                    
+                    // Instagram Post Preview
                     Expanded(
-                      flex: 3,
                       child: _buildPreviewSection(),
                     ),
-                    
-                    // Corrections Section
-                    Container(
-                      height: 400,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        border: Border(
-                          top: BorderSide(
-                            color: const Color(0xFF2D2D2D),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      child: _buildCorrectionsSection(),
-                    ),
                   ],
-                );
-              } else {
-                // Layout horizontal para pantallas grandes
-                return Row(
-                  children: [
-                    // Preview Section (Left) - Instagram Post
-                    Expanded(
-                      flex: 2,
-                      child: _buildPreviewSection(),
+                ),
+              ),
+              
+              // Bottom Sheet - Lado derecho en web
+              Container(
+                width: 400,
+                height: constraints.maxHeight,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    left: BorderSide(
+                      color: Colors.grey.shade200,
+                      width: 1,
                     ),
-                    
-                    // Corrections Section (Right)
-                    Container(
-                      width: 350,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        border: Border(
-                          left: BorderSide(
-                            color: const Color(0xFF2D2D2D),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      child: _buildCorrectionsSection(),
-                    ),
-                  ],
-                );
-              }
-            },
-          ),
-        ),
-      ],
+                  ),
+                ),
+                child: _buildCorrectionsBottomSheet(),
+              ),
+            ],
+          );
+        }
+        
+        // Layout móvil original
+        return Stack(
+          children: [
+            // Main Content - Instagram Preview
+            Column(
+              children: [
+                // Custom Header
+                _buildCustomHeader(),
+                
+                // Instagram Post Preview
+                Expanded(
+                  child: _buildPreviewSection(),
+                ),
+              ],
+            ),
+            
+            // Bottom Sheet Modal for Corrections - Draggable
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: _bottomSheetHeight,
+              child: _buildCorrectionsBottomSheet(),
+            ),
+          ],
+        );
+      },
     );
   }
 
   // Custom Header
   Widget _buildCustomHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white, // Fondo blanco para light mode
         border: Border(
           bottom: BorderSide(
-            color: const Color(0xFF2D2D2D),
-            width: 1,
-          ),
+            color: Colors.grey.shade200,
+            width: 0.5,
         ),
       ),
-      child: Column(
-        children: [
-          // Top row with back button and title
-          Row(
-            children: [
-              // Back Button
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+      ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: [
+                // Top row with back button and title
+                Row(
+                  children: [
+                    // Back Button - Fixed
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                    child: Icon(
+                          Icons.arrow_back_ios,
+                      color: Colors.black,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                    
+                    // Logo
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                    color: const Color(0xFF5B1DF4).withOpacity(0.1),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Image.asset(
+                          'assets/images/logo_m.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    
+                    // Title
+                    Expanded(
+                      child: Text(
+                        'Editar ${widget.preview.type == 'post' ? 'Post' : 'Story'}',
+                        style: GoogleFonts.poppins(
+                      color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.3,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              
-              // Title
-              Expanded(
-                child: Text(
-                  'Editar ${widget.preview.type == 'post' ? 'Post' : 'Story'}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 8),
-          
-          // Status indicator
-          if (_isApplyingCorrections || _isPublishing)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3B82F6).withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+                
+                // Status indicator
+                if (_isApplyingCorrections || _isPublishing) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                  color: const Color(0xFF5B1DF4).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CupertinoActivityIndicator(
+                            color: Color(0xFF5B1DF4),
+                            radius: 7,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _isApplyingCorrections ? 'Aplicando correcciones...' : 'Publicando...',
+                          style: GoogleFonts.poppins(
+                            color: const Color(0xFF5B1DF4),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isApplyingCorrections ? 'Aplicando correcciones...' : 'Publicando...',
-                    style: const TextStyle(
-                      color: Color(0xFF3B82F6),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                ],
+              ],
+        ),
+      ),
+    );
+  }
+
+  // Bottom Sheet Modal for Corrections - Draggable Cupertino Style
+  Widget _buildCorrectionsBottomSheet() {
+    final isWeb = MediaQuery.of(context).size.width > 600;
+    
+    // En web, el bottom sheet siempre está expandido y ocupa toda la altura
+    if (isWeb) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white, // Fondo blanco para light mode
+        ),
+        child: Column(
+          children: [
+            // Header sin handle en web
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Colors.grey.shade200,
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Title
+                  Expanded(
+                    child: Text(
+                      'Herramientas de Edición',
+                      style: GoogleFonts.poppins(
+                        color: Colors.black,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Cupertino Tabs
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Colors.grey.shade200,
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: widget.preview.type == 'story'
+                    ? [
+                        // Para stories solo mostrar Visual y Revisar
+                        _buildCupertinoTab('Visual', 0, CupertinoIcons.eye),
+                        _buildCupertinoTab('Revisar', 1, CupertinoIcons.checkmark_circle),
+                      ]
+                    : [
+                        // Para posts y reels mostrar todos los tabs
+                        _buildCupertinoTab('Sugerencias', 0, CupertinoIcons.lightbulb),
+                        _buildCupertinoTab('Visual', 1, CupertinoIcons.eye),
+                        _buildCupertinoTab('Texto', 2, CupertinoIcons.textformat),
+                        _buildCupertinoTab('Revisar', 3, CupertinoIcons.checkmark_circle),
+                      ],
+              ),
+            ),
+            
+            // Tab Content - Scrollable
+            Expanded(
+              child: ClipRect(
+                child: _buildTabContent(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // Layout móvil original con draggable
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white, // Fondo blanco para light mode
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Cupertino Handle and Header - Draggable Area
+          GestureDetector(
+            onVerticalDragStart: (details) {
+              _dragStartHeight = _bottomSheetHeight;
+              _dragOffset = 0;
+            },
+            onVerticalDragUpdate: (details) {
+              setState(() {
+                // Acumular el offset del drag
+                _dragOffset -= details.delta.dy;
+                // Calcular nueva altura
+                double newHeight = _dragStartHeight + _dragOffset;
+                // Aplicar con clamp
+                _bottomSheetHeight = newHeight.clamp(_minSheetHeight, _maxSheetHeight);
+              });
+            },
+            onVerticalDragEnd: (details) {
+              // Snap a posiciones específicas basadas en la velocidad y posición
+              setState(() {
+                final velocity = details.primaryVelocity ?? 0;
+                
+                // Si hay una velocidad significativa, usar eso para decidir
+                if (velocity.abs() > 500) {
+                  if (velocity < 0) {
+                    // Arrastrado hacia arriba rápido -> expandir al máximo
+                    _bottomSheetHeight = _maxSheetHeight;
+                  } else {
+                    // Arrastrado hacia abajo rápido -> colapsar
+                    _bottomSheetHeight = _minSheetHeight;
+                  }
+                } else {
+                  // Snap basado en la posición actual
+                  if (_bottomSheetHeight < 150) {
+                    _bottomSheetHeight = _minSheetHeight; // Colapsar
+                  } else if (_bottomSheetHeight < 500) {
+                    _bottomSheetHeight = 400; // Tamaño medio
+                  } else if (_bottomSheetHeight < (_maxSheetHeight * 0.7)) {
+                    _bottomSheetHeight = 600; // Tamaño grande
+                  } else {
+                    _bottomSheetHeight = _maxSheetHeight; // Máximo
+                  }
+                }
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: const BoxDecoration(
+                color: Colors.white, // Fondo blanco para light mode
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Cupertino Handle
+                  Container(
+                    width: 36,
+                    height: 5,
+                    margin: const EdgeInsets.only(top: 8, bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.4),
+                      borderRadius: BorderRadius.circular(2.5),
+                    ),
+                  ),
+                  
+                  // Header Row
+                  Row(
+                    children: [
+                      // Title
+                      Expanded(
+                        child: Text(
+                          'Herramientas de Edición',
+                          style: GoogleFonts.poppins(
+                            color: Colors.black,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                      ),
+                      
+                      // Info text
+                      Text(
+                        'Arrastra para ajustar',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Cupertino Tabs y Contenido - Solo visible cuando está expandido
+          if (_bottomSheetHeight > 150)
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Cupertino Tabs
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white, // Fondo blanco para light mode
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Colors.grey.shade200,
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: widget.preview.type == 'story'
+                          ? [
+                              // Para stories solo mostrar Visual y Revisar
+                              _buildCupertinoTab('Visual', 0, CupertinoIcons.eye),
+                              _buildCupertinoTab('Revisar', 1, CupertinoIcons.checkmark_circle),
+                            ]
+                          : [
+                              // Para posts y reels mostrar todos los tabs
+                              _buildCupertinoTab('Sugerencias', 0, CupertinoIcons.lightbulb),
+                              _buildCupertinoTab('Visual', 1, CupertinoIcons.eye),
+                              _buildCupertinoTab('Texto', 2, CupertinoIcons.textformat),
+                              _buildCupertinoTab('Revisar', 3, CupertinoIcons.checkmark_circle),
+                            ],
+                    ),
+                  ),
+                  
+                  // Tab Content - Scrollable
+                  Expanded(
+                    child: ClipRect(
+                      child: _buildTabContent(),
                     ),
                   ),
                 ],
@@ -279,36 +571,52 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
 
   // Preview Section - Instagram Post Style
   Widget _buildPreviewSection() {
+    // Usar el preview actualizado si está disponible, sino el original
+    final currentPreview = _updatedPreview ?? widget.preview;
+    
     return Container(
-      color: Colors.black,
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Instagram Post Container
-            Container(
-              width: double.infinity,
-              color: Colors.black,
-              child: Column(
-                children: [
-                  // Instagram Header
-                  _buildInstagramHeader(),
-                  
-                  // Instagram Image
-                  _buildInstagramImage(),
-                  
-                  // Instagram Actions
-                  _buildInstagramActions(),
-                  
-                  // Instagram Caption
-                  _buildInstagramCaption(),
-                  
-                  // Instagram Comments Preview
-                  _buildInstagramCommentsPreview(),
-                ],
+      color: Colors.white, // Fondo blanco para light mode
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Detectar si estamos en web o pantalla grande
+          final isWeb = MediaQuery.of(context).size.width > 600;
+          final maxWidth = isWeb ? 600.0 : double.infinity;
+          
+          return Center(
+            child: SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: maxWidth,
+                ),
+                child: Column(
+                  children: [
+                    // Instagram Post Container
+                    Container(
+                      width: double.infinity,
+                      color: Colors.white, // Fondo blanco para light mode
+                      child: Column(
+                        children: [
+                          // Instagram Header
+                          _buildInstagramHeader(),
+                          
+                          // Instagram Image
+                          _buildInstagramImage(),
+                          
+                          // Instagram Actions
+                          _buildInstagramActions(),
+                          
+                          // Instagram Caption (solo para posts y reels, no para stories)
+                          if (currentPreview.type != 'story')
+                            _buildInstagramCaption(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -316,41 +624,43 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
   Widget _buildInstagramHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white, // Fondo blanco para light mode
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade200,
+            width: 0.5,
+          ),
+        ),
+      ),
       child: Row(
         children: [
-          // Profile Picture
+          // Profile Picture - Magneto Logo
           Container(
             width: 32,
             height: 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  Colors.purple,
-                  Colors.pink,
-                  Colors.orange,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: const Color(0xFF5B1DF4), // Fondo púrpura Magneto
             ),
-            child: Container(
-              margin: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.black,
-              ),
-              child: Container(
-                margin: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF3B82F6),
-                ),
-                child: const Icon(
-                  Icons.person,
-                  color: Colors.white,
-                  size: 16,
-                ),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/logo_instagram.jpg',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Center(
+                    child: Text(
+                      'm',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -361,18 +671,37 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'magneto_empleos',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      'magnetoempleos',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    // Badge de verificación de Instagram
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF0095F6), // Azul de Instagram
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 8,
+                      ),
+                    ),
+                  ],
                 ),
                 Text(
                   'Hace 2 horas',
                   style: TextStyle(
-                    color: Colors.grey[400],
+                    color: Colors.grey.shade600,
                     fontSize: 12,
                   ),
                 ),
@@ -383,9 +712,9 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           // More options
           GestureDetector(
             onTap: () {},
-            child: const Icon(
+            child: Icon(
               Icons.more_horiz,
-              color: Colors.white,
+              color: Colors.black,
               size: 20,
             ),
           ),
@@ -398,65 +727,92 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
     // Usar el preview actualizado si está disponible, sino el original
     final currentPreview = _updatedPreview ?? widget.preview;
     
-    return AspectRatio(
-      aspectRatio: 1.0,
-      child: Stack(
-        children: [
-          // Media principal (imagen o video)
-          MediaPreviewWidget(
-            mediaUrl: currentPreview.previewImage,
-            aspectRatio: 1.0,
-          ),
-          
-          // Overlay de loading cuando se están aplicando correcciones
-          if (_isUpdatingPreview)
-            Container(
-              color: Colors.black.withOpacity(0.7),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
-                      strokeWidth: 3,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Aplicando correcciones...',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // En web, limitar el tamaño máximo del preview
+        final isWeb = MediaQuery.of(context).size.width > 600;
+        final maxSize = isWeb ? 600.0 : constraints.maxWidth;
+        
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: maxSize,
+              maxHeight: maxSize,
+            ),
+            child: AspectRatio(
+              aspectRatio: currentPreview.type == 'story' ? 9 / 16 : 1.0, // Stories: formato vertical 9:16, Posts/Reels: 1:1
+              child: Stack(
+                children: [
+                  // Media principal (imagen o video)
+                  MediaPreviewWidget(
+                    mediaUrl: currentPreview.type == 'reel' && currentPreview.videoUrl != null && currentPreview.videoUrl!.isNotEmpty
+                        ? currentPreview.videoUrl!
+                        : currentPreview.previewImage,
+                    aspectRatio: currentPreview.type == 'story' ? 9 / 16 : 1.0, // Stories: formato vertical 9:16
+                  ),
+                  
+                  // Overlay de loading cuando se están aplicando correcciones
+                  if (_isUpdatingPreview)
+                    Container(
+                      color: Colors.white.withOpacity(0.9),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5B1DF4)),
+                              strokeWidth: 3,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Aplicando correcciones...',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'La IA está generando una nueva versión',
+                              style: TextStyle(
+                                color: Colors.grey.shade700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'La IA está generando una nueva versión',
-                      style: TextStyle(
-                        color: Colors.grey[300],
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
             ),
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildInstagramActions() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white, // Fondo blanco para light mode
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade200,
+            width: 0.5,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           // Like button
           GestureDetector(
             onTap: () {},
-            child: const Icon(
-              Icons.favorite_border,
-              color: Colors.white,
+            child: Icon(
+              CupertinoIcons.heart,
+              color: Colors.black,
               size: 24,
             ),
           ),
@@ -465,9 +821,9 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           // Comment button
           GestureDetector(
             onTap: () {},
-            child: const Icon(
-              Icons.chat_bubble_outline,
-              color: Colors.white,
+            child: Icon(
+              CupertinoIcons.chat_bubble,
+              color: Colors.black,
               size: 24,
             ),
           ),
@@ -476,9 +832,9 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           // Share button
           GestureDetector(
             onTap: () {},
-            child: const Icon(
-              Icons.send,
-              color: Colors.white,
+            child: Icon(
+              CupertinoIcons.paperplane,
+              color: Colors.black,
               size: 24,
             ),
           ),
@@ -488,9 +844,9 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           // Save button
           GestureDetector(
             onTap: () {},
-            child: const Icon(
-              Icons.bookmark_border,
-              color: Colors.white,
+            child: Icon(
+              CupertinoIcons.bookmark,
+              color: Colors.black,
               size: 24,
             ),
           ),
@@ -501,7 +857,10 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
 
   Widget _buildInstagramCaption() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white, // Fondo blanco para light mode
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -509,19 +868,37 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
             text: TextSpan(
               children: [
                 TextSpan(
-                  text: 'magneto_empleos ',
+                  text: 'magnetoempleos ',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Colors.black,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    margin: const EdgeInsets.only(left: 2, right: 2),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFF0095F6), // Azul de Instagram
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 8,
+                    ),
+                  ),
+                ),
+                const TextSpan(text: ' '),
                 TextSpan(
                   text: _captionController.text.isNotEmpty 
                       ? _captionController.text
                       : widget.preview.caption,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Colors.black,
                     fontSize: 14,
                   ),
                 ),
@@ -539,7 +916,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                 return Text(
                   hashtag,
                   style: const TextStyle(
-                    color: Color(0xFF3B82F6),
+                    color: Color(0xFF5B1DF4),
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -558,14 +935,14 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   height: 12,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.grey[400]!),
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5B1DF4)),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'Actualizando contenido...',
                   style: TextStyle(
-                    color: Colors.grey[400],
+                    color: Colors.grey.shade600,
                     fontSize: 12,
                     fontStyle: FontStyle.italic,
                   ),
@@ -574,175 +951,49 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
             ),
           ],
           
-          const SizedBox(height: 8),
-          
-          // View all comments
-          GestureDetector(
-            onTap: () {},
-            child: Text(
-              'Ver todos los comentarios',
-              style: TextStyle(
-                color: Colors.grey[400],
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInstagramCommentsPreview() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Column(
-        children: [
-          // Sample comment
-          Row(
-            children: [
-              Text(
-                'usuario_ejemplo',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '¡Excelente contenido! 👏',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          
-          // Add comment
-          Row(
-            children: [
-              Text(
-                'Hace 1 hora',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
   }
 
 
-  // Corrections Section
-  Widget _buildCorrectionsSection() {
-    return Column(
-      children: [
-        // Corrections Header
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2D2D2D),
-            border: Border(
-              bottom: BorderSide(
-                color: const Color(0xFF4B5563),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.tune,
-                color: Color(0xFF3B82F6),
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Herramientas de Edición',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Text(
-                'Haz ajustes precisos a tu contenido',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        // Tabs
-        Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            border: Border(
-              bottom: BorderSide(
-                color: const Color(0xFF4B5563),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              _buildTab('Sugerencias', 0, Icons.lightbulb_outline),
-              _buildTab('Visual', 1, Icons.visibility_outlined),
-              _buildTab('Texto', 2, Icons.text_fields),
-              _buildTab('Revisar', 3, Icons.check_circle_outline),
-            ],
-          ),
-        ),
-        
-        // Tab Content
-        Expanded(
-          child: _buildTabContent(),
-        ),
-      ],
-    );
-  }
 
-  Widget _buildTab(String title, int index, IconData icon) {
+
+  // Cupertino Style Tab
+  Widget _buildCupertinoTab(String title, int index, IconData icon) {
     final isSelected = _selectedTab == index;
     return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedTab = index),
+      child: CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: () => setState(() => _selectedTab = index),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF3B82F6).withOpacity(0.1) : Colors.transparent,
-            border: Border(
-              bottom: BorderSide(
-                color: isSelected ? const Color(0xFF3B82F6) : Colors.transparent,
-                width: 2,
-              ),
-            ),
+            color: isSelected 
+                ? const Color(0xFF5B1DF4).withOpacity(0.15) 
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
-                color: isSelected ? const Color(0xFF3B82F6) : Colors.grey[400],
-                size: 16,
+                color: isSelected 
+                    ? const Color(0xFF5B1DF4) 
+                    : const Color(0xFF9CA3AF),
+                size: 18,
               ),
               const SizedBox(height: 4),
               Text(
                 title,
-                style: TextStyle(
-                  color: isSelected ? const Color(0xFF3B82F6) : Colors.grey[400],
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
+                style: GoogleFonts.poppins(
+                  color: isSelected 
+                      ? const Color(0xFF5B1DF4) 
+                      : const Color(0xFF9CA3AF),
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  letterSpacing: -0.2,
                 ),
                 textAlign: TextAlign.center,
                 maxLines: 1,
@@ -755,7 +1006,21 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
     );
   }
 
+
   Widget _buildTabContent() {
+    // Para stories, mapear los índices: 0 = Visual, 1 = Revisar
+    if (widget.preview.type == 'story') {
+      switch (_selectedTab) {
+        case 0:
+          return _buildVisualTab();
+        case 1:
+          return _buildReviewTab();
+        default:
+          return const SizedBox.shrink();
+      }
+    }
+    
+    // Para posts y reels, usar los índices originales
     switch (_selectedTab) {
       case 0:
         return _buildSuggestionsTab();
@@ -774,12 +1039,13 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Sugerencias de IA',
-            style: TextStyle(
-              color: Colors.white,
+            style: GoogleFonts.poppins(
+              color: Colors.black,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -788,8 +1054,11 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           Expanded(
             child: SingleChildScrollView(
               child: Column(
-                children: _getRealSuggestions().map((suggestion) {
-                  final isSelected = _selectedCorrections.contains(suggestion['title']);
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+          ..._getRealSuggestions().map((suggestion) {
+            final isSelected = _selectedCorrections.contains(suggestion['title']);
                   
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -799,16 +1068,18 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: isSelected 
-                              ? const Color(0xFF3B82F6).withOpacity(0.2)
-                              : const Color(0xFF2D2D2D),
-                          borderRadius: BorderRadius.circular(8),
+                              ? const Color(0xFF5B1DF4).withOpacity(0.15)
+                              : Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: isSelected 
-                                ? const Color(0xFF3B82F6)
-                                : const Color(0xFF4B5563),
+                                ? const Color(0xFF5B1DF4)
+                                : Colors.grey.shade200,
+                            width: 1,
                           ),
                         ),
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
@@ -818,18 +1089,19 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                                   height: 20,
                                   decoration: BoxDecoration(
                                     color: isSelected 
-                                        ? const Color(0xFF3B82F6)
+                                        ? const Color(0xFF5B1DF4)
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(
                                       color: isSelected 
-                                          ? const Color(0xFF3B82F6)
-                                          : const Color(0xFF6B7280),
+                                          ? const Color(0xFF5B1DF4)
+                                          : Colors.grey.shade300,
+                                      width: 1,
                                     ),
                                   ),
                                   child: isSelected
                                       ? const Icon(
-                                          Icons.check,
+                                          CupertinoIcons.checkmark,
                                           color: Colors.white,
                                           size: 14,
                                         )
@@ -840,7 +1112,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                                   child: Text(
                                     suggestion['title'],
                                     style: TextStyle(
-                                      color: isSelected ? const Color(0xFF3B82F6) : Colors.white,
+                                      color: isSelected ? const Color(0xFF5B1DF4) : Colors.black,
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -868,7 +1140,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                               Text(
                                 suggestion['description'],
                                 style: TextStyle(
-                                  color: Colors.grey[300],
+                                  color: Colors.grey.shade700,
                                   fontSize: 12,
                                   height: 1.4,
                                 ),
@@ -880,7 +1152,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                                 children: [
                                   Icon(
                                     Icons.trending_up,
-                                    color: Colors.green[400],
+                                    color: Colors.green.shade600,
                                     size: 14,
                                   ),
                                   const SizedBox(width: 4),
@@ -888,7 +1160,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                                     child: Text(
                                       suggestion['impact'],
                                       style: TextStyle(
-                                        color: Colors.green[400],
+                                        color: Colors.green.shade600,
                                         fontSize: 11,
                                         fontStyle: FontStyle.italic,
                                       ),
@@ -903,6 +1175,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                     ),
                   );
                 }).toList(),
+                ],
               ),
             ),
           ),
@@ -1086,11 +1359,12 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.max,
         children: [
           Text(
             'Selecciones Visuales',
             style: TextStyle(
-              color: Colors.white,
+              color: Colors.black,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -1099,6 +1373,8 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           Expanded(
             child: SingleChildScrollView(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Visual Selection Tools
                   _buildVisualSelectionTools(),
@@ -1108,7 +1384,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   Text(
                     'Feedback Visual',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1117,15 +1393,23 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   TextField(
                     onChanged: (value) => setState(() => _customFeedback = value),
                     maxLines: 3,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    style: const TextStyle(color: Colors.black, fontSize: 12),
                     decoration: InputDecoration(
                       hintText: 'Describe los cambios visuales que quieres aplicar...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      hintStyle: TextStyle(color: Colors.grey.shade500),
                       filled: true,
-                      fillColor: const Color(0xFF2D2D2D),
+                      fillColor: Colors.grey.shade50,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF5B1DF4)),
                       ),
                     ),
                   ),
@@ -1135,7 +1419,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   Text(
                     'Cambios de Estilo',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1144,15 +1428,23 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   TextField(
                     onChanged: (value) => setState(() => _styleChanges = value),
                     maxLines: 3,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    style: const TextStyle(color: Colors.black, fontSize: 12),
                     decoration: InputDecoration(
                       hintText: 'Especifica cambios de estilo, colores, tipografía...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      hintStyle: TextStyle(color: Colors.grey.shade500),
                       filled: true,
-                      fillColor: const Color(0xFF2D2D2D),
+                      fillColor: Colors.grey.shade50,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF5B1DF4)),
                       ),
                     ),
                   ),
@@ -1167,7 +1459,29 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
 
   Widget _buildVisualSelectionTools() {
     // Comentado temporalmente - Herramientas de selección
-    return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: Colors.grey.shade600, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Las herramientas de selección visual estarán disponibles próximamente',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
     
     // return Column(
     //   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1287,11 +1601,12 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.max,
         children: [
           Text(
             'Revisar y Publicar',
             style: TextStyle(
-              color: Colors.white,
+              color: Colors.black,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -1300,14 +1615,18 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           Expanded(
             child: SingleChildScrollView(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Resumen de Correcciones
                   _buildCorrectionsSummary(),
                   const SizedBox(height: 20),
                   
-                  // Resumen de Caption
-                  _buildCaptionSummary(),
-                  const SizedBox(height: 20),
+                  // Resumen de Caption (solo para posts y reels, no para stories)
+                  if (widget.preview.type != 'story') ...[
+                    _buildCaptionSummary(),
+                    const SizedBox(height: 20),
+                  ],
                   
                   // Acciones
                   _buildActionButtons(),
@@ -1324,10 +1643,10 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF2D2D2D),
+        color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: const Color(0xFF4B5563),
+          color: Colors.grey.shade200,
         ),
       ),
       child: Column(
@@ -1337,14 +1656,14 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
             children: [
               Icon(
                 Icons.auto_fix_high,
-                color: const Color(0xFF3B82F6),
+                color: const Color(0xFF5B1DF4),
                 size: 18,
               ),
               const SizedBox(width: 8),
               Text(
                 'Correcciones Seleccionadas',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Colors.black,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1356,7 +1675,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
             Text(
               'No hay correcciones seleccionadas',
               style: TextStyle(
-                color: Colors.grey[400],
+                color: Colors.grey.shade600,
                 fontSize: 12,
               ),
             )
@@ -1367,25 +1686,25 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF3B82F6).withOpacity(0.1),
+                    color: const Color(0xFF5B1DF4).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                      color: const Color(0xFF3B82F6).withOpacity(0.3),
+                      color: const Color(0xFF5B1DF4).withOpacity(0.3),
                     ),
                   ),
                   child: Row(
                     children: [
                       Icon(
                         Icons.check_circle,
-                        color: const Color(0xFF3B82F6),
+                        color: const Color(0xFF5B1DF4),
                         size: 16,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           correction,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Colors.black,
                             fontSize: 12,
                           ),
                         ),
@@ -1404,10 +1723,10 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF2D2D2D),
+        color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: const Color(0xFF4B5563),
+          color: Colors.grey.shade200,
         ),
       ),
       child: Column(
@@ -1417,14 +1736,14 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
             children: [
               Icon(
                 Icons.text_fields,
-                color: const Color(0xFF10B981),
+                color: Colors.green.shade600,
                 size: 18,
               ),
               const SizedBox(width: 8),
               Text(
                 'Caption Final',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Colors.black,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1435,8 +1754,9 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A1A),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey.shade200),
             ),
             child: Text(
               _captionController.text.isNotEmpty 
@@ -1444,8 +1764,8 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   : 'No se ha editado el caption',
               style: TextStyle(
                 color: _captionController.text.isNotEmpty 
-                    ? Colors.white 
-                    : Colors.grey[400],
+                    ? Colors.black 
+                    : Colors.grey.shade600,
                 fontSize: 12,
                 height: 1.4,
               ),
@@ -1465,7 +1785,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           child: ElevatedButton(
             onPressed: _applyCorrections,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3B82F6),
+              backgroundColor: const Color(0xFF5B1DF4),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
@@ -1550,11 +1870,12 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.max,
         children: [
           Text(
             'Opciones de Caption',
             style: TextStyle(
-              color: Colors.white,
+              color: Colors.black,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -1563,6 +1884,8 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
           Expanded(
             child: SingleChildScrollView(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Caption Options
                   _buildCaptionOptions(),
@@ -1572,7 +1895,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   Text(
                     'Editor Personalizado',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1583,23 +1906,31 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                     maxLines: 4,
                     maxLength: 2200,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 12,
                       height: 1.4,
                     ),
                     decoration: InputDecoration(
                       hintText: 'Escribe tu caption personalizado...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      hintStyle: TextStyle(color: Colors.grey.shade500),
                       filled: true,
-                      fillColor: const Color(0xFF2D2D2D),
+                      fillColor: Colors.grey.shade50,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF5B1DF4)),
                       ),
                       counterStyle: TextStyle(
                         color: _captionController.text.length > 2000 
                             ? Colors.red 
-                            : Colors.grey[400],
+                            : Colors.grey.shade600,
                         fontSize: 10,
                       ),
                     ),
@@ -1610,7 +1941,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   Text(
                     'Cambios de Texto',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1619,15 +1950,23 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   TextField(
                     onChanged: (value) => setState(() => _textChanges = value),
                     maxLines: 3,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    style: const TextStyle(color: Colors.black, fontSize: 12),
                     decoration: InputDecoration(
                       hintText: 'Especifica cambios de texto, tono, mensaje...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      hintStyle: TextStyle(color: Colors.grey.shade500),
                       filled: true,
-                      fillColor: const Color(0xFF2D2D2D),
+                      fillColor: Colors.grey.shade50,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF5B1DF4)),
                       ),
                     ),
                   ),
@@ -1642,6 +1981,32 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
 
   Widget _buildCaptionOptions() {
     final captionOptions = _getRealCaptionOptions();
+
+    if (captionOptions.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.grey.shade600, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No hay opciones de caption disponibles. Las opciones aparecerán después de generar el preview.',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Column(
       children: captionOptions.map((option) {
@@ -1661,13 +2026,13 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: isSelected 
-                    ? const Color(0xFF3B82F6).withOpacity(0.1)
-                    : const Color(0xFF2D2D2D),
+                    ? const Color(0xFF5B1DF4).withOpacity(0.15)
+                    : Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: isSelected 
-                      ? const Color(0xFF3B82F6)
-                      : const Color(0xFF4B5563),
+                      ? const Color(0xFF5B1DF4)
+                      : Colors.grey.shade200,
                 ),
               ),
               child: Column(
@@ -1680,13 +2045,13 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                         height: 16,
                         decoration: BoxDecoration(
                           color: isSelected 
-                              ? const Color(0xFF3B82F6)
+                              ? const Color(0xFF5B1DF4)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(3),
                           border: Border.all(
                             color: isSelected 
-                                ? const Color(0xFF3B82F6)
-                                : const Color(0xFF6B7280),
+                                ? const Color(0xFF5B1DF4)
+                                : Colors.grey.shade300,
                           ),
                         ),
                         child: isSelected
@@ -1701,7 +2066,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                       Text(
                         option['title'] as String,
                         style: TextStyle(
-                          color: isSelected ? const Color(0xFF3B82F6) : Colors.white,
+                          color: isSelected ? const Color(0xFF5B1DF4) : Colors.black,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1710,7 +2075,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                       Text(
                         option['style'] as String,
                         style: TextStyle(
-                          color: Colors.grey[400],
+                          color: Colors.grey.shade600,
                           fontSize: 10,
                         ),
                       ),
@@ -1720,7 +2085,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   Text(
                     option['content'] as String,
                     style: TextStyle(
-                      color: isSelected ? const Color(0xFF3B82F6) : Colors.white,
+                      color: isSelected ? const Color(0xFF5B1DF4) : Colors.black,
                       fontSize: 11,
                     ),
                     maxLines: 2,
@@ -1735,15 +2100,16 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: isSelected 
-                              ? const Color(0xFF3B82F6).withOpacity(0.3)
-                              : const Color(0xFF3B82F6).withOpacity(0.2),
+                              ? const Color(0xFF5B1DF4).withOpacity(0.2)
+                              : const Color(0xFF5B1DF4).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           hashtag,
                           style: TextStyle(
-                            color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF3B82F6),
+                            color: const Color(0xFF5B1DF4),
                             fontSize: 9,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       );
@@ -1753,7 +2119,7 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
                   Text(
                     'CTA: ${option['call_to_action']}',
                     style: TextStyle(
-                      color: Colors.grey[400],
+                      color: Colors.grey.shade600,
                       fontSize: 10,
                     ),
                   ),
@@ -1879,54 +2245,208 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
   }
 
   void _showPublishDialog() {
+    final isWeb = MediaQuery.of(context).size.width > 600;
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2D2D2D),
-        title: const Text(
-          'Publicar Contenido',
-          style: TextStyle(color: Colors.white),
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '¿Estás seguro de que quieres publicar este ${widget.preview.type}?',
-              style: TextStyle(color: Colors.grey[300]),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _captionController,
-              maxLines: 3,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Caption final (opcional)',
-                labelStyle: TextStyle(color: Colors.grey[400]),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: isWeb ? 500 : double.infinity,
+            maxHeight: isWeb ? (MediaQuery.of(context).size.height * 0.9) : double.infinity,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header con icono
+              Container(
+                padding: EdgeInsets.all(isWeb ? 32 : 24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF5B1DF4).withOpacity(0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFF3B82F6)),
+                child: Column(
+                  children: [
+                    Container(
+                      width: isWeb ? 64 : 56,
+                      height: isWeb ? 64 : 56,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5B1DF4),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        CupertinoIcons.check_mark_circled_solid,
+                        color: Colors.white,
+                        size: isWeb ? 36 : 32,
+                      ),
+                    ),
+                    SizedBox(height: isWeb ? 20 : 16),
+                    Text(
+                      'Publicar Contenido',
+                      style: GoogleFonts.poppins(
+                        color: Colors.black,
+                        fontSize: isWeb ? 24 : 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: isWeb ? 12 : 8),
+                    Text(
+                      '¿Estás seguro de que quieres publicar este ${widget.preview.type}?',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey.shade600,
+                        fontSize: isWeb ? 16 : 14,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              
+              // Contenido
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(isWeb ? 32 : 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: _captionController,
+                        maxLines: isWeb ? 6 : 4,
+                        maxLength: 2200,
+                        style: GoogleFonts.poppins(
+                          color: Colors.black,
+                          fontSize: isWeb ? 15 : 14,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Caption final (opcional)',
+                          labelStyle: GoogleFonts.poppins(
+                            color: Colors.grey.shade600,
+                            fontSize: isWeb ? 15 : 14,
+                          ),
+                          hintText: 'Escribe el caption que se publicará...',
+                          hintStyle: GoogleFonts.poppins(
+                            color: Colors.grey.shade400,
+                            fontSize: isWeb ? 15 : 14,
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF5B1DF4),
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: EdgeInsets.all(isWeb ? 20 : 16),
+                          counterStyle: TextStyle(
+                            color: _captionController.text.length > 2000 
+                                ? Colors.red 
+                                : Colors.grey.shade600,
+                            fontSize: isWeb ? 13 : 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Botones
+              Container(
+                padding: EdgeInsets.all(isWeb ? 24 : 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(
+                            vertical: isWeb ? 16 : 14,
+                            horizontal: isWeb ? 24 : 16,
+                          ),
+                          side: BorderSide(color: Colors.grey.shade300),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Cancelar',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey.shade700,
+                            fontSize: isWeb ? 17 : 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: isWeb ? 16 : 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: _publishContent,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5B1DF4),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(
+                            vertical: isWeb ? 16 : 14,
+                            horizontal: isWeb ? 24 : 16,
+                          ),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              CupertinoIcons.paperplane_fill,
+                              size: isWeb ? 20 : 18,
+                            ),
+                            SizedBox(width: isWeb ? 10 : 8),
+                            Text(
+                              'Publicar',
+                              style: GoogleFonts.poppins(
+                                fontSize: isWeb ? 17 : 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: _publishContent,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3B82F6),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Publicar'),
-          ),
-        ],
       ),
     );
   }
@@ -1974,31 +2494,44 @@ class _PreviewCorrectionsPageState extends ConsumerState<PreviewCorrectionsPage>
         request,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Contenido publicado exitosamente'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // Actualizar estado ANTES de navegar para evitar que se quede cargando
+      if (mounted) {
+        setState(() {
+          _isPublishing = false;
+        });
+      }
 
-      // Navigate back to main app
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/main-app',
-        (route) => false,
-        arguments: {'initialIndex': widget.preview.type == 'post' ? 2 : 3},
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Contenido publicado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Navigate back to main app
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/main-app',
+          (route) => false,
+          arguments: {'initialIndex': widget.preview.type == 'post' ? 2 : 3},
+        );
+      }
     } catch (e) {
       print('DEBUG: Error publishing: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al publicar: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      setState(() {
-        _isPublishing = false;
-      });
+      
+      // Actualizar estado en caso de error también
+      if (mounted) {
+        setState(() {
+          _isPublishing = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al publicar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 }

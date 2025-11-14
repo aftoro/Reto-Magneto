@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/app_strings.dart';
+import '../../../../core/utils/responsive.dart';
 import '../widgets/auth_text_field.dart';
-import '../widgets/gradient_button.dart';
 import '../providers/auth_provider.dart';
-import 'home_page.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -34,48 +35,36 @@ class _LoginPageState extends ConsumerState<LoginPage>
       vsync: this,
     );
 
-    _slideAnimation = Tween<double>(
-      begin: 50.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation = Tween<double>(begin: 50.0, end: 0.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
 
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOut,
-    ));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
 
     _animationController.forward();
-    
-    // Verificar si hay un mensaje de bienvenida (por ejemplo, después del registro)
+
+    // Verificar mensaje de bienvenida después del primer frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForWelcomeMessage();
     });
   }
 
   void _checkForWelcomeMessage() {
-    // Simular que el usuario viene del registro
-    // En producción, esto vendría de los parámetros de navegación
-    if (mounted) {
-      setState(() {
-        _showWelcomeMessage = true;
-        _welcomeMessage = '¡Bienvenido! Tu cuenta ha sido creada exitosamente.';
-      });
-      
-      // Ocultar el mensaje después de 4 segundos
-      Future.delayed(const Duration(seconds: 4), () {
-        if (mounted) {
-          setState(() {
-            _showWelcomeMessage = false;
-          });
-        }
-      });
-    }
+    if (!mounted) return;
+
+    setState(() {
+      _showWelcomeMessage = true;
+      _welcomeMessage = AppStrings.accountCreatedMessage;
+    });
+
+    // Ocultar después de 4 segundos
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() => _showWelcomeMessage = false);
+      }
+    });
   }
 
   @override
@@ -86,79 +75,65 @@ class _LoginPageState extends ConsumerState<LoginPage>
     super.dispose();
   }
 
-  // Método alternativo de navegación usando el contexto global
   void _navigateToHome() {
-    print('🔄 Intentando navegación alternativa...');
-    
-    // Usar el contexto actual si está disponible
-    if (mounted) {
-      print('✅ Contexto disponible, navegando...');
-      try {
-        Navigator.pushReplacementNamed(context, '/home');
-        print('✅ Navegación alternativa exitosa');
-      } catch (e) {
-        print('❌ Error en navegación alternativa: $e');
-      }
-    } else {
-      print('❌ Widget no está montado para navegación alternativa');
+    if (!mounted) return;
+    try {
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      debugPrint('Error en navegación: $e');
     }
   }
 
   void _handleLogin() async {
-    print('🔑 Iniciando login...');
-    
-    if (!_formKey.currentState!.validate()) {
-      print('❌ Validación del formulario falló');
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     try {
-      print('📧 Email: ${_emailController.text.trim()}');
-      print('🔒 Contraseña: ${_passwordController.text.length} caracteres');
-      
-      // Llamar al login
-      await ref.read(signInProvider.notifier).signIn(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
 
-      print('✅ Login exitoso, esperando actualización de estado...');
-      
-      // Esperar un poco para que el estado se actualice completamente
+      await ref.read(signInProvider.notifier).signIn(
+            email: email,
+            password: password,
+          );
+
+      // Pequeña espera para que la sesión se sincronice
       await Future.delayed(const Duration(milliseconds: 300));
-      
-      // Verificar que el usuario esté autenticado
-      final currentUser = await ref.read(currentUserProvider.future);
-      print('👤 Usuario actual después del login: $currentUser');
-      
-      if (currentUser == null) {
-        print('⚠️ Usuario no encontrado después del login');
+
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error: No se pudo establecer la sesión'),
+              backgroundColor: AppConstants.errorColor,
+            ),
+          );
+        }
         return;
       }
-      
-      print('✅ Usuario confirmado, navegando al dashboard...');
-      
-      // Usar addPostFrameCallback para asegurar que el contexto sea válido
+
+      final currentUser = await ref.read(currentUserProvider.future);
+      if (currentUser == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error: Usuario no encontrado'),
+              backgroundColor: AppConstants.errorColor,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Navegación segura
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            print('🚀 Navegando usando addPostFrameCallback...');
-            try {
-              Navigator.pushReplacementNamed(context, '/home');
-              print('✅ Navegación exitosa con addPostFrameCallback');
-            } catch (e) {
-              print('⚠️ Error con addPostFrameCallback: $e');
-              // Intentar navegación alternativa
-              _navigateToHome();
-            }
+            _navigateToHome();
           }
         });
-      } else {
-        print('❌ Widget no está montado, no se puede navegar');
       }
-      
     } catch (e) {
-      print('⚠️ Error en login: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -171,7 +146,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
   }
 
   void _navigateToRegister() {
-    Navigator.pushNamed(context, '/register');
+    if (mounted) {
+      Navigator.pushNamed(context, '/register');
+    }
   }
 
   @override
@@ -179,15 +156,22 @@ class _LoginPageState extends ConsumerState<LoginPage>
     final authState = ref.watch(signInProvider);
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
           Container(
             decoration: const BoxDecoration(
-              gradient: AppConstants.brandGradient,
+              color: AppConstants.primaryVariant,
             ),
             child: SafeArea(
+              bottom: false,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(AppConstants.spacingL),
+                padding: EdgeInsets.only(
+                  left: context.isMobile ? AppConstants.spacingL : AppConstants.spacingXL,
+                  right: context.isMobile ? AppConstants.spacingL : AppConstants.spacingXL,
+                  top: context.isMobile ? AppConstants.spacingXXL : AppConstants.spacingXL,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + AppConstants.spacingL,
+                ),
                 child: AnimatedBuilder(
                   animation: _animationController,
                   builder: (context, child) {
@@ -196,103 +180,118 @@ class _LoginPageState extends ConsumerState<LoginPage>
                       child: FadeTransition(
                         opacity: _fadeAnimation,
                         child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            const SizedBox(height: AppConstants.spacingXXL),
-                            
-                            // Logo y título
+                            // Logo
                             Container(
-                              width: 100,
-                              height: 100,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(
-                                  AppConstants.radiusXL,
-                                ),
-                                boxShadow: AppConstants.elevatedShadow,
-                              ),
-                              child: const Icon(
-                                Icons.flutter_dash,
-                                size: 60,
-                                color: AppConstants.primaryColor,
-                              ),
-                            ),
-                            
-                            const SizedBox(height: AppConstants.spacingL),
-                            
-                            Text(
-                              '¡Bienvenido de vuelta!',
-                              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            
-                            const SizedBox(height: AppConstants.spacingM),
-                            
-                            Text(
-                              'Inicia sesión en tu cuenta',
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            
-                            const SizedBox(height: AppConstants.spacingXXL),
-                            
-                            // Formulario
-                            Container(
-                              padding: const EdgeInsets.all(AppConstants.spacingL),
+                              width: context.isMobile ? 80 : 100,
+                              height: context.isMobile ? 80 : 100,
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(AppConstants.radiusL),
                                 boxShadow: AppConstants.elevatedShadow,
                               ),
+                              padding: const EdgeInsets.all(12),
+                              child: Image.asset(
+                                'assets/images/logo_m.png',
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Icon(
+                                    Icons.flutter_dash,
+                                    size: context.isMobile ? 50 : 60,
+                                    color: AppConstants.primaryColor,
+                                  );
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(height: AppConstants.spacingXL),
+
+                            Text(
+                              AppStrings.welcomeBack,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: Responsive.getAdaptiveFontSize(
+                                  context,
+                                  mobile: 28,
+                                  tablet: 32,
+                                  desktop: 36,
+                                ),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+
+                            const SizedBox(height: AppConstants.spacingS),
+
+                            Text(
+                              AppStrings.loginSubtitleAlt,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: Responsive.getAdaptiveFontSize(
+                                  context,
+                                  mobile: 16,
+                                  tablet: 18,
+                                  desktop: 18,
+                                ),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+
+                            const SizedBox(height: AppConstants.spacingXXL),
+
+                            // Formulario
+                            Container(
+                              padding: EdgeInsets.all(
+                                context.isMobile ? AppConstants.spacingL : AppConstants.spacingXL,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(AppConstants.radiusL),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
                               child: Form(
                                 key: _formKey,
                                 child: Column(
                                   children: [
-                                    // Mostrar error si existe
+                                    // Mensaje de error
                                     if (authState.error != null)
                                       Container(
                                         width: double.infinity,
                                         padding: const EdgeInsets.all(AppConstants.spacingM),
                                         margin: const EdgeInsets.only(bottom: AppConstants.spacingM),
                                         decoration: BoxDecoration(
-                                          color: AppConstants.errorColor.withValues(alpha: 0.1),
+                                          color: AppConstants.errorColor.withOpacity(0.1),
                                           borderRadius: BorderRadius.circular(AppConstants.radiusM),
                                           border: Border.all(
-                                            color: AppConstants.errorColor.withValues(alpha: 0.3),
+                                            color: AppConstants.errorColor.withOpacity(0.3),
                                           ),
                                         ),
                                         child: Row(
                                           children: [
-                                            Icon(
-                                              Icons.error_outline,
-                                              color: AppConstants.errorColor,
-                                              size: 20,
-                                            ),
+                                            const Icon(Icons.error_outline, color: AppConstants.errorColor, size: 20),
                                             const SizedBox(width: AppConstants.spacingS),
                                             Expanded(
                                               child: Text(
                                                 authState.error!,
-                                                style: TextStyle(
-                                                  color: AppConstants.errorColor,
-                                                  fontSize: 14,
-                                                ),
+                                                style: const TextStyle(color: AppConstants.errorColor, fontSize: 14),
                                               ),
                                             ),
                                             IconButton(
-                                              onPressed: () {
-                                                ref.read(signInProvider.notifier).clearError();
-                                              },
+                                              onPressed: () => ref.read(signInProvider.notifier).clearError(),
                                               icon: const Icon(Icons.close, size: 20),
                                               padding: EdgeInsets.zero,
                                             ),
                                           ],
                                         ),
                                       ),
-                                    
+
                                     AuthTextField(
                                       controller: _emailController,
                                       labelText: 'Email',
@@ -303,15 +302,15 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                         if (value == null || value.isEmpty) {
                                           return 'Por favor ingresa tu email';
                                         }
-                                        if (!value.contains('@')) {
-                                          return 'Por favor ingresa un email válido';
+                                        if (!value.contains('@') || !value.contains('.')) {
+                                          return 'Ingresa un email válido';
                                         }
                                         return null;
                                       },
                                     ),
-                                    
+
                                     const SizedBox(height: AppConstants.spacingM),
-                                    
+
                                     AuthTextField(
                                       controller: _passwordController,
                                       labelText: 'Contraseña',
@@ -320,53 +319,63 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                       obscureText: _obscurePassword,
                                       suffixIcon: IconButton(
                                         icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_outlined
-                                              : Icons.visibility_off_outlined,
+                                          _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
                                         ),
-                                        onPressed: () {
-                                          setState(() {
-                                            _obscurePassword = !_obscurePassword;
-                                          });
-                                        },
+                                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                                       ),
                                       validator: (value) {
                                         if (value == null || value.isEmpty) {
                                           return 'Por favor ingresa tu contraseña';
                                         }
                                         if (value.length < 6) {
-                                          return 'Por favor ingresa tu contraseña';
+                                          return 'La contraseña debe tener al menos 6 caracteres';
                                         }
                                         return null;
                                       },
                                     ),
-                                    
+
                                     const SizedBox(height: AppConstants.spacingM),
-                                    
+
                                     // Olvidé mi contraseña
                                     Align(
                                       alignment: Alignment.centerRight,
                                       child: TextButton(
                                         onPressed: () {
-                                          // TODO: Implementar recuperación de contraseña
+                                          // TODO: Implementar recuperación
                                         },
+                                        style: TextButton.styleFrom(
+                                          padding: EdgeInsets.zero,
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
                                         child: Text(
                                           '¿Olvidaste tu contraseña?',
                                           style: TextStyle(
                                             color: AppConstants.primaryColor,
                                             fontSize: 14,
+                                            fontWeight: FontWeight.w500,
                                           ),
                                         ),
                                       ),
                                     ),
-                                    
+
                                     const SizedBox(height: AppConstants.spacingL),
-                                    
+
                                     // Botón de login
                                     SizedBox(
                                       width: double.infinity,
-                                      child: GradientButton(
-                                        onPressed: !authState.isLoading ? _handleLogin : null,
+                                      height: 50,
+                                      child: ElevatedButton(
+                                        onPressed: authState.isLoading ? null : _handleLogin,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppConstants.primaryColor,
+                                          foregroundColor: Colors.white,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(AppConstants.radiusM),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingM),
+                                        ),
                                         child: authState.isLoading
                                             ? const SizedBox(
                                                 width: 20,
@@ -378,10 +387,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                               )
                                             : const Text(
                                                 'Iniciar Sesión',
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
+                                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                                               ),
                                       ),
                                     ),
@@ -389,9 +395,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                 ),
                               ),
                             ),
-                            
+
                             const SizedBox(height: AppConstants.spacingL),
-                            
+
                             // Enlace a registro
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -399,22 +405,42 @@ class _LoginPageState extends ConsumerState<LoginPage>
                                 Text(
                                   '¿No tienes una cuenta? ',
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.9),
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: Responsive.getAdaptiveFontSize(
+                                      context,
+                                      mobile: 14,
+                                      tablet: 15,
+                                      desktop: 16,
+                                    ),
                                   ),
                                 ),
                                 TextButton(
                                   onPressed: _navigateToRegister,
-                                  child: const Text(
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  child: Text(
                                     'Regístrate',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w600,
                                       decoration: TextDecoration.underline,
+                                      fontSize: Responsive.getAdaptiveFontSize(
+                                        context,
+                                        mobile: 14,
+                                        tablet: 15,
+                                        desktop: 16,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ],
                             ),
+
+                            // Espacio extra para teclado
+                            SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0 ? AppConstants.spacingL : 0),
                           ],
                         ),
                       ),
@@ -424,56 +450,40 @@ class _LoginPageState extends ConsumerState<LoginPage>
               ),
             ),
           ),
-          
-          // Mensaje de bienvenida
+
+          // Mensaje de bienvenida flotante
           if (_showWelcomeMessage)
             Positioned(
-              top: AppConstants.spacingL,
+              top: AppConstants.spacingL + MediaQuery.of(context).padding.top,
               left: AppConstants.spacingL,
               right: AppConstants.spacingL,
-              child: Container(
-                padding: const EdgeInsets.all(AppConstants.spacingM),
-                decoration: BoxDecoration(
-                  color: AppConstants.successColor,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusM),
-                  boxShadow: AppConstants.cardShadow,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.check_circle,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    const SizedBox(width: AppConstants.spacingS),
-                    Expanded(
-                      child: Text(
-                        _welcomeMessage,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.all(AppConstants.spacingM),
+                  decoration: BoxDecoration(
+                    color: AppConstants.successColor,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusM),
+                    boxShadow: AppConstants.cardShadow,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                      const SizedBox(width: AppConstants.spacingS),
+                      Expanded(
+                        child: Text(
+                          _welcomeMessage,
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        setState(() {
-                          _showWelcomeMessage = false;
-                        });
-                      },
-                      icon: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 20,
+                      IconButton(
+                        onPressed: () => setState(() => _showWelcomeMessage = false),
+                        icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                       ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

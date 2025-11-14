@@ -24,8 +24,16 @@ class AnalyticsApiService {
           '/analytics/ai-insights',
           options: Options(
             headers: ApiConfig.defaultHeaders,
+            receiveTimeout: const Duration(minutes: 2),
+            sendTimeout: const Duration(minutes: 2),
           ),
         );
+
+        // Log respuesta cruda para depuración
+        print('[AnalyticsApiService] GET /analytics/ai-insights status: ${response.statusCode}');
+        try {
+          print('[AnalyticsApiService] data (IA): ${response.data}');
+        } catch (_) {}
 
         if (response.statusCode == 200) {
           return AnalyticsResponse.fromApiJson(response.data);
@@ -73,8 +81,16 @@ class AnalyticsApiService {
           '/analytics/basic',
           options: Options(
             headers: ApiConfig.defaultHeaders,
+            receiveTimeout: const Duration(minutes: 1),
+            sendTimeout: const Duration(minutes: 1),
           ),
         );
+
+        // Log respuesta cruda para depuración
+        print('[AnalyticsApiService] GET /analytics/basic status: ${response.statusCode}');
+        try {
+          print('[AnalyticsApiService] data (basic): ${response.data}');
+        } catch (_) {}
 
         if (response.statusCode == 200) {
           return AnalyticsResponse.fromApiJson(response.data);
@@ -108,6 +124,30 @@ class AnalyticsApiService {
     }
 
     throw Exception('Error inesperado al obtener analytics básicas');
+  }
+
+  /// Envía estadísticas ya calculadas para generar solo el análisis IA (POST)
+  Future<AIInsightsEntity> postAIInsightsWithExistingStats(Map<String, dynamic> statsPayload) async {
+    try {
+      final response = await _dio.post(
+        '/analytics/ai-insights',
+        data: statsPayload,
+        options: Options(
+          headers: ApiConfig.defaultHeaders,
+          receiveTimeout: const Duration(minutes: 2),
+          sendTimeout: const Duration(minutes: 2),
+        ),
+      );
+      if (response.statusCode == 200) {
+        print('[AnalyticsApiService] POST ai-insights ok');
+        // Devuelve solo AIInsightsEntity desde aiInsights
+        return AIInsightsEntity.fromApiJson(response.data['aiInsights'] ?? {});
+      }
+      throw Exception('Error HTTP: ${response.statusCode}');
+    } on DioException catch (e) {
+      print('POST ai-insights error: ${e.message}');
+      rethrow;
+    }
   }
 
   /// Datos demo para cuando la API no está disponible

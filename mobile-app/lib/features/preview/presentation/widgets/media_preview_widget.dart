@@ -63,8 +63,10 @@ class _MediaPreviewWidgetState extends State<MediaPreviewWidget>
 
   Future<void> _initializeVideoThumbnail() async {
     try {
-      print('DEBUG: Initializing video thumbnail for: ${widget.mediaUrl}');
-      _thumbnailController = VideoPlayerController.networkUrl(Uri.parse(widget.mediaUrl));
+      // Inicializar el video player para obtener el primer frame
+      _thumbnailController = VideoPlayerController.networkUrl(Uri.parse(widget.mediaUrl))
+        ..setLooping(false)
+        ..setVolume(0.0);
       
       _thumbnailController!.addListener(() {
         if (_thumbnailController!.value.isInitialized && mounted) {
@@ -73,18 +75,23 @@ class _MediaPreviewWidgetState extends State<MediaPreviewWidget>
             _thumbnailError = false;
           });
         }
+        if (_thumbnailController!.value.hasError && mounted) {
+          setState(() {
+            _thumbnailError = true;
+            _isThumbnailReady = false;
+          });
+        }
       });
 
-      // Add timeout to prevent infinite loading
+      // Reducir timeout a 5 segundos para que falle más rápido y muestre placeholder
       await _thumbnailController!.initialize().timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 5),
         onTimeout: () {
-          print('WARNING: Video thumbnail initialization timeout');
-          throw Exception('Video thumbnail timeout');
+          throw Exception('Video initialization timeout');
         },
       );
       
-      // Seek to first frame (0 seconds) to get thumbnail
+      // Ir al primer frame
       await _thumbnailController!.seekTo(Duration.zero);
       
       if (mounted) {
@@ -94,12 +101,11 @@ class _MediaPreviewWidgetState extends State<MediaPreviewWidget>
         });
       }
     } catch (e) {
-      print('ERROR: Failed to initialize video thumbnail: $e');
-      // Continue with placeholder if thumbnail fails
+      print('Error inicializando thumbnail de video: $e');
       if (mounted) {
         setState(() {
-          _isThumbnailReady = false;
           _thumbnailError = true;
+          _isThumbnailReady = false;
         });
       }
     }
@@ -135,114 +141,140 @@ class _MediaPreviewWidgetState extends State<MediaPreviewWidget>
     );
   }
 
-          Widget _buildVideoPreview() {
-            return GestureDetector(
-              onTap: _openVideoInBrowser,
-              child: Container(
-                color: Colors.grey[900],
+  Widget _buildVideoPreview() {
+    return GestureDetector(
+      onTap: _openVideoInBrowser,
+      child: Container(
+        color: Colors.grey[900],
+        child: Stack(
+          children: [
+            // Video thumbnail o placeholder
+            if (_isThumbnailReady && !_thumbnailError && _thumbnailController != null)
+              // Mostrar el primer frame del video
+              SizedBox.expand(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _thumbnailController!.value.size.width,
+                    height: _thumbnailController!.value.size.height,
+                    child: VideoPlayer(_thumbnailController!),
+                  ),
+                ),
+              )
+            else if (_thumbnailError)
+              // Error state
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Error al cargar',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              // Loading state - mostrar placeholder más rápido
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.grey.shade800,
+                      Colors.grey.shade900,
+                    ],
+                  ),
+                ),
                 child: Stack(
                   children: [
-                    // Video thumbnail or placeholder
-                    if (_isThumbnailReady && _thumbnailController != null && !_thumbnailError)
-                      // Real video thumbnail
-                      Center(
-                        child: AspectRatio(
-                          aspectRatio: _thumbnailController!.value.aspectRatio,
-                          child: VideoPlayer(_thumbnailController!),
-                        ),
-                      )
-                    else
-                      // Loading, error, or placeholder
-                      Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_thumbnailError)
-                              // Error state
-                              Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.error_outline,
-                                  color: Colors.red,
-                                  size: 40,
-                                ),
-                              )
-                            else if (!_isThumbnailReady)
-                              // Loading state
-                              const CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              )
-                            else
-                              // Fallback placeholder
-                              Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withOpacity(0.2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.play_circle_filled,
-                                  color: Colors.blue,
-                                  size: 40,
-                                ),
-                              ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _thumbnailError 
-                                ? 'Error al cargar' 
-                                : _isThumbnailReady 
-                                  ? 'Video' 
-                                  : 'Cargando...',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              shape: BoxShape.circle,
                             ),
-                            if (_isThumbnailReady && !_thumbnailError) ...[
-                              const SizedBox(height: 4),
-                              const Text(
-                                'Toca para reproducir',
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ],
+                            child: const Icon(
+                              Icons.play_circle_outline,
+                              color: Colors.white70,
+                              size: 48,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Video',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 16,
+                      right: 16,
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white70),
                         ),
                       ),
-
-                    // Play button overlay (only when thumbnail is ready and no error)
-                    if (_isThumbnailReady && !_thumbnailError)
-                      Center(
-                        child: Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.play_arrow,
-                            color: Colors.white,
-                            size: 40,
-                          ),
-                        ),
-                      ),
+                    ),
                   ],
                 ),
               ),
-            );
-          }
+
+            // Play button overlay (siempre visible)
+            Center(
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.play_arrow,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildImagePreview() {
     return Stack(

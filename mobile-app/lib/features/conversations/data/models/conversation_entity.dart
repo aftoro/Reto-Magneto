@@ -245,7 +245,7 @@ class ConversationWithMessages with _$ConversationWithMessages {
   factory ConversationWithMessages.fromApiJson(Map<String, dynamic> data) {
     final conversation = ConversationEntity.fromApiJson(data);
     
-    // Procesar mensajes
+    // Procesar mensajes (el backend puede enviar 'mensajes' o no)
     List<MessageEntity> messages = [];
     if (data['mensajes'] != null) {
       messages = (data['mensajes'] as List)
@@ -253,17 +253,37 @@ class ConversationWithMessages with _$ConversationWithMessages {
           .toList();
     }
 
-    // Ordenar mensajes por fecha de creación
-    messages.sort((a, b) {
-      final aTime = a.createdAt ?? DateTime(1970);
-      final bTime = b.createdAt ?? DateTime(1970);
-      return aTime.compareTo(bTime); // Orden ascendente para mostrar cronológicamente
-    });
-
-    // Obtener último mensaje
+    // Procesar último mensaje (el backend envía 'lastMessage' directamente)
     MessageEntity? lastMessage;
-    if (messages.isNotEmpty) {
-      lastMessage = messages.last; // El último mensaje después del ordenamiento
+    if (data['lastMessage'] != null && data['lastMessage'] is Map<String, dynamic>) {
+      try {
+        // El backend envía lastMessage como un objeto simple con content, created_at, message_type, is_ai_generated
+        final lastMsgData = data['lastMessage'] as Map<String, dynamic>;
+        // Crear un MessageEntity básico desde lastMessage
+        lastMessage = MessageEntity(
+          id: '', // No viene en lastMessage
+          conversacionId: conversation.id,
+          content: lastMsgData['content']?.toString() ?? '',
+          messageType: lastMsgData['message_type']?.toString() ?? 'incoming',
+          createdAt: lastMsgData['created_at'] != null 
+              ? DateTime.tryParse(lastMsgData['created_at'].toString()) 
+              : null,
+          isAiGenerated: lastMsgData['is_ai_generated'] as bool? ?? false,
+        );
+      } catch (e) {
+        print('Error al procesar lastMessage: $e');
+      }
+    }
+
+    // Si no hay lastMessage pero hay mensajes, usar el último mensaje de la lista
+    if (lastMessage == null && messages.isNotEmpty) {
+      // Ordenar mensajes por fecha de creación
+      messages.sort((a, b) {
+        final aTime = a.createdAt ?? DateTime(1970);
+        final bTime = b.createdAt ?? DateTime(1970);
+        return aTime.compareTo(bTime); // Orden ascendente
+      });
+      lastMessage = messages.last;
     }
 
     // Calcular mensajes no leídos (simplificado)

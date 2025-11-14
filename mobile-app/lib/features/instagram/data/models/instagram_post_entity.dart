@@ -12,6 +12,7 @@ class InstagramPostEntity with _$InstagramPostEntity {
     required String mediaType,
     required String imageUrl,
     required String mediaUrl,
+    String? videoUrl,
     required String caption,
     required String permalink,
     required DateTime timestamp,
@@ -35,6 +36,7 @@ class InstagramPostEntity with _$InstagramPostEntity {
       mediaType: data['media_type']?.toString() ?? 'IMAGE',
       imageUrl: data['image_url']?.toString() ?? '',
       mediaUrl: data['media_url']?.toString() ?? '',
+      videoUrl: data['video_url']?.toString(),
       caption: data['caption']?.toString() ?? '',
       permalink: data['permalink']?.toString() ?? '',
       timestamp: data['timestamp'] != null 
@@ -44,8 +46,9 @@ class InstagramPostEntity with _$InstagramPostEntity {
           ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
       // Usar estadísticas del objeto stats si está disponible, sino usar valores directos
+      // like_count viene directamente de Instagram API usando summary
       commentsCount: stats?['total_comments'] as int? ?? data['comments_count'] as int?,
-      likesCount: stats?['likes'] as int? ?? data['likes_count'] as int?,
+      likesCount: stats?['likes'] as int? ?? data['likes_count'] as int? ?? data['like_count'] as int?,
       sharesCount: data['shares_count'] as int?,
     );
   }

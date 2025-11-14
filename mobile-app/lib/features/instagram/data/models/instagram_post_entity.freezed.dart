@@ -27,6 +27,7 @@ mixin _$InstagramPostEntity {
   String get mediaType => throw _privateConstructorUsedError;
   String get imageUrl => throw _privateConstructorUsedError;
   String get mediaUrl => throw _privateConstructorUsedError;
+  String? get videoUrl => throw _privateConstructorUsedError;
   String get caption => throw _privateConstructorUsedError;
   String get permalink => throw _privateConstructorUsedError;
   DateTime get timestamp => throw _privateConstructorUsedError;
@@ -59,6 +60,7 @@ abstract class $InstagramPostEntityCopyWith<$Res> {
     String mediaType,
     String imageUrl,
     String mediaUrl,
+    String? videoUrl,
     String caption,
     String permalink,
     DateTime timestamp,
@@ -90,6 +92,7 @@ class _$InstagramPostEntityCopyWithImpl<$Res, $Val extends InstagramPostEntity>
     Object? mediaType = null,
     Object? imageUrl = null,
     Object? mediaUrl = null,
+    Object? videoUrl = freezed,
     Object? caption = null,
     Object? permalink = null,
     Object? timestamp = null,
@@ -124,6 +127,10 @@ class _$InstagramPostEntityCopyWithImpl<$Res, $Val extends InstagramPostEntity>
                 ? _value.mediaUrl
                 : mediaUrl // ignore: cast_nullable_to_non_nullable
                       as String,
+            videoUrl: freezed == videoUrl
+                ? _value.videoUrl
+                : videoUrl // ignore: cast_nullable_to_non_nullable
+                      as String?,
             caption: null == caption
                 ? _value.caption
                 : caption // ignore: cast_nullable_to_non_nullable
@@ -174,6 +181,7 @@ abstract class _$$InstagramPostEntityImplCopyWith<$Res>
     String mediaType,
     String imageUrl,
     String mediaUrl,
+    String? videoUrl,
     String caption,
     String permalink,
     DateTime timestamp,
@@ -204,6 +212,7 @@ class __$$InstagramPostEntityImplCopyWithImpl<$Res>
     Object? mediaType = null,
     Object? imageUrl = null,
     Object? mediaUrl = null,
+    Object? videoUrl = freezed,
     Object? caption = null,
     Object? permalink = null,
     Object? timestamp = null,
@@ -238,6 +247,10 @@ class __$$InstagramPostEntityImplCopyWithImpl<$Res>
             ? _value.mediaUrl
             : mediaUrl // ignore: cast_nullable_to_non_nullable
                   as String,
+        videoUrl: freezed == videoUrl
+            ? _value.videoUrl
+            : videoUrl // ignore: cast_nullable_to_non_nullable
+                  as String?,
         caption: null == caption
             ? _value.caption
             : caption // ignore: cast_nullable_to_non_nullable
@@ -281,6 +294,7 @@ class _$InstagramPostEntityImpl implements _InstagramPostEntity {
     required this.mediaType,
     required this.imageUrl,
     required this.mediaUrl,
+    this.videoUrl,
     required this.caption,
     required this.permalink,
     required this.timestamp,
@@ -306,6 +320,8 @@ class _$InstagramPostEntityImpl implements _InstagramPostEntity {
   @override
   final String mediaUrl;
   @override
+  final String? videoUrl;
+  @override
   final String caption;
   @override
   final String permalink;
@@ -322,7 +338,7 @@ class _$InstagramPostEntityImpl implements _InstagramPostEntity {
 
   @override
   String toString() {
-    return 'InstagramPostEntity(id: $id, mediaId: $mediaId, instagramPostId: $instagramPostId, mediaType: $mediaType, imageUrl: $imageUrl, mediaUrl: $mediaUrl, caption: $caption, permalink: $permalink, timestamp: $timestamp, createdAt: $createdAt, commentsCount: $commentsCount, likesCount: $likesCount, sharesCount: $sharesCount)';
+    return 'InstagramPostEntity(id: $id, mediaId: $mediaId, instagramPostId: $instagramPostId, mediaType: $mediaType, imageUrl: $imageUrl, mediaUrl: $mediaUrl, videoUrl: $videoUrl, caption: $caption, permalink: $permalink, timestamp: $timestamp, createdAt: $createdAt, commentsCount: $commentsCount, likesCount: $likesCount, sharesCount: $sharesCount)';
   }
 
   @override
@@ -340,6 +356,8 @@ class _$InstagramPostEntityImpl implements _InstagramPostEntity {
                 other.imageUrl == imageUrl) &&
             (identical(other.mediaUrl, mediaUrl) ||
                 other.mediaUrl == mediaUrl) &&
+            (identical(other.videoUrl, videoUrl) ||
+                other.videoUrl == videoUrl) &&
             (identical(other.caption, caption) || other.caption == caption) &&
             (identical(other.permalink, permalink) ||
                 other.permalink == permalink) &&
@@ -365,6 +383,7 @@ class _$InstagramPostEntityImpl implements _InstagramPostEntity {
     mediaType,
     imageUrl,
     mediaUrl,
+    videoUrl,
     caption,
     permalink,
     timestamp,
@@ -399,6 +418,7 @@ abstract class _InstagramPostEntity implements InstagramPostEntity {
     required final String mediaType,
     required final String imageUrl,
     required final String mediaUrl,
+    final String? videoUrl,
     required final String caption,
     required final String permalink,
     required final DateTime timestamp,
@@ -423,6 +443,8 @@ abstract class _InstagramPostEntity implements InstagramPostEntity {
   String get imageUrl;
   @override
   String get mediaUrl;
+  @override
+  String? get videoUrl;
   @override
   String get caption;
   @override

@@ -33,10 +33,24 @@ class InstagramCommentsState with _$InstagramCommentsState {
 
 class InstagramPostsNotifier extends StateNotifier<InstagramPostsState> {
   final InstagramApiService _apiService;
+  bool _hasLoadedOnce = false;
 
   InstagramPostsNotifier(this._apiService) : super(const InstagramPostsState.initial());
 
-  /// Cargar posts
+  /// Cargar posts solo si no se han cargado antes
+  Future<void> loadPostsIfNeeded({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    // Si ya se cargaron los datos una vez, no volver a cargar automáticamente
+    if (_hasLoadedOnce && state is! _Loading) {
+      return;
+    }
+    
+    await loadPosts(page: page, limit: limit);
+  }
+
+  /// Cargar posts (forzar carga)
   Future<void> loadPosts({
     int page = 1,
     int limit = 20,
@@ -52,13 +66,15 @@ class InstagramPostsNotifier extends StateNotifier<InstagramPostsState> {
         posts: response.data,
         pagination: response.pagination,
       );
+      _hasLoadedOnce = true;
     } catch (e) {
       state = InstagramPostsState.error(message: e.toString());
     }
   }
 
-  /// Refrescar posts
+  /// Refrescar posts (forzar recarga)
   Future<void> refreshPosts() async {
+    _hasLoadedOnce = false; // Reset flag to allow reload
     await loadPosts();
   }
 
@@ -88,10 +104,24 @@ class InstagramPostsNotifier extends StateNotifier<InstagramPostsState> {
 
 class InstagramCommentsNotifier extends StateNotifier<InstagramCommentsState> {
   final InstagramApiService _apiService;
+  final Map<String, bool> _loadedPosts = {};
 
   InstagramCommentsNotifier(this._apiService) : super(const InstagramCommentsState.initial());
 
-  /// Cargar comentarios de un post
+  /// Cargar comentarios solo si no se han cargado antes para este post
+  Future<void> loadCommentsIfNeeded(
+    String postId, {
+    bool includeReplies = true,
+  }) async {
+    // Si ya se cargaron los comentarios para este post, no volver a cargar
+    if (_loadedPosts[postId] == true && state is! _CommentsLoading) {
+      return;
+    }
+    
+    await loadComments(postId, includeReplies: includeReplies);
+  }
+
+  /// Cargar comentarios de un post (forzar carga)
   Future<void> loadComments(
     String postId, {
     bool includeReplies = true,
@@ -109,6 +139,7 @@ class InstagramCommentsNotifier extends StateNotifier<InstagramCommentsState> {
           comments: [],
           count: 0,
         );
+        _loadedPosts[postId] = true;
         return;
       }
       
@@ -116,6 +147,7 @@ class InstagramCommentsNotifier extends StateNotifier<InstagramCommentsState> {
         comments: response.data,
         count: response.count,
       );
+      _loadedPosts[postId] = true;
     } catch (e) {
       // Si es un error de conexión o 404, mostrar comentarios vacíos en lugar de error
       if (e.toString().contains('404') || 
@@ -125,14 +157,16 @@ class InstagramCommentsNotifier extends StateNotifier<InstagramCommentsState> {
           comments: [],
           count: 0,
         );
+        _loadedPosts[postId] = true;
       } else {
         state = InstagramCommentsState.error(message: e.toString());
       }
     }
   }
 
-  /// Refrescar comentarios
+  /// Refrescar comentarios (forzar recarga)
   Future<void> refreshComments(String postId) async {
+    _loadedPosts[postId] = false; // Reset flag to allow reload
     await loadComments(postId);
   }
 }

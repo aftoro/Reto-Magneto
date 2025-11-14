@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/custom_text_field.dart';
 import '../../../../shared/widgets/gradient_button.dart';
 import '../providers/message_provider.dart';
@@ -77,7 +78,27 @@ class _SendMessagePageState extends ConsumerState<SendMessagePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Enviar Mensaje'),
+        title: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.white.withOpacity(0.1),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Image.asset(
+                  'assets/images/logo_m.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Enviar Mensaje'),
+          ],
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         flexibleSpace: Container(
@@ -259,7 +280,7 @@ class _SendMessagePageState extends ConsumerState<SendMessagePage> {
                         const SizedBox(width: AppConstants.spacingM),
                         Expanded(
                           child: Text(
-                            'Los mensajes se enviarán directamente a través de Instagram',
+                            AppStrings.messagesInfo,
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: AppConstants.infoColor,
                             ),

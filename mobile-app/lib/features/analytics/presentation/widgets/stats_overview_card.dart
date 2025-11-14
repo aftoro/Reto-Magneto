@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../data/models/analytics_entity.dart';
+import '../../../instagram/data/datasources/instagram_api_service.dart';
 
 class StatsOverviewCard extends StatelessWidget {
   final AnalyticsEntity analytics;
@@ -15,17 +18,13 @@ class StatsOverviewCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingL),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: AppConstants.brandGradient,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF3B82F6).withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: AppConstants.primaryColor.withOpacity(0.35),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -79,21 +78,21 @@ class StatsOverviewCard extends StatelessWidget {
                 child: _buildStatItem(
                   'Posts',
                   analytics.posts.summary.totalPosts.toString(),
-                  Icons.article_outlined,
+                  'assets/icons/media.svg',
                 ),
               ),
               Expanded(
                 child: _buildStatItem(
                   'Conversaciones',
                   analytics.conversations.summary.totalConversations.toString(),
-                  Icons.chat_bubble_outline,
+                  'assets/icons/chat.svg',
                 ),
               ),
               Expanded(
                 child: _buildStatItem(
                   'Engagement',
                   '${analytics.posts.summary.avgEngagement.toStringAsFixed(1)}%',
-                  Icons.trending_up,
+                  CupertinoIcons.arrow_up_right,
                 ),
               ),
             ],
@@ -105,38 +104,77 @@ class StatsOverviewCard extends StatelessWidget {
                 child: _buildStatItem(
                   'Usuarios Activos',
                   analytics.conversations.summary.activeConversations.toString(),
-                  Icons.people_outline,
+                  'assets/icons/users.svg',
                 ),
               ),
               Expanded(
                 child: _buildStatItem(
                   'Completitud',
                   '${analytics.conversations.summary.avgCompletion.toStringAsFixed(1)}%',
-                  Icons.check_circle_outline,
+                  CupertinoIcons.checkmark_circle,
                 ),
               ),
               Expanded(
                 child: _buildStatItem(
                   'IA Ratio',
                   '${analytics.conversations.summary.messageStats.aiRatio}%',
-                  Icons.smart_toy_outlined,
+                  CupertinoIcons.chart_pie_fill,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: AppConstants.spacingM),
+          // Likes totales de todos los posts
+          FutureBuilder<int>(
+            future: _getLikesSummary(),
+            builder: (context, snapshot) {
+              final likesCount = snapshot.data ?? 0;
+              return Row(
+                children: [
+                  Expanded(
+                    child: _buildStatItem(
+                      'Likes totales',
+                      likesCount.toString(),
+                      'assets/icons/like.svg',
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon) {
+  Future<int> _getLikesSummary() async {
+    try {
+      final apiService = InstagramApiService();
+      return await apiService.getLikesSummary();
+    } catch (e) {
+      print('Error obteniendo resumen de likes: $e');
+      return 0;
+    }
+  }
+
+  Widget _buildStatItem(String label, String value, dynamic icon) {
     return Column(
       children: [
-        Icon(
-          icon,
-          color: Colors.white.withOpacity(0.8),
-          size: 20,
-        ),
+        icon is String
+            ? SvgPicture.asset(
+                icon,
+                width: 20,
+                height: 20,
+                colorFilter: ColorFilter.mode(
+                  Colors.white.withOpacity(0.8),
+                  BlendMode.srcIn,
+                ),
+              )
+            : Icon(
+                icon as IconData,
+                color: Colors.white.withOpacity(0.8),
+                size: 20,
+              ),
         const SizedBox(height: AppConstants.spacingS),
         Text(
           value,

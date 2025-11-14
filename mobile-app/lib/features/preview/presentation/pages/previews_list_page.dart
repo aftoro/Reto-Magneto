@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'dart:ui';
 import '../../data/models/preview_entity.dart';
 import '../providers/preview_provider.dart';
 import 'preview_corrections_page.dart';
+import 'package:video_player/video_player.dart';
 
 class PreviewsListPage extends ConsumerStatefulWidget {
   const PreviewsListPage({super.key});
@@ -72,61 +77,90 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
   Widget build(BuildContext context) {
     final previewsState = ref.watch(previewsListProvider);
     
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new,
-              color: Colors.white,
-              size: 20,
-            ),
-          ),
-        ),
-        title: const Text(
-          'Mis Contenidos',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _showFilters,
-            icon: const Icon(
-              Icons.filter_list,
-              color: Colors.white,
-            ),
-          ),
-        ],
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white, // Fondo blanco para light mode
       ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: Column(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20), // Icono iOS blanco
+            onPressed: () => Navigator.pop(context),
+            padding: const EdgeInsets.only(left: 8), // Padding ajustado
+          ),
+          title: Row(
             children: [
-              // Search Bar
-              _buildSearchBar(),
-              
-              // Filters
-              _buildFilters(),
-              
-              // Content
-              Expanded(
-                child: _buildContent(previewsState),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.white.withOpacity(0.2),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Image.asset(
+                    'assets/images/logo_m.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Mis Contenidos',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                ),
               ),
             ],
+          ),
+          actions: [
+            IconButton(
+              onPressed: _showFilters,
+              icon: Icon(
+                CupertinoIcons.slider_horizontal_3,
+                color: Colors.white.withOpacity(0.9),
+              ),
+            ),
+          ],
+          flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF5B1DF4), // Morado Magneto
+                  Color(0xFF7C3AED), // Morado más claro
+                ],
+              ),
+            ),
+          ),
+        ),
+        body: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: Column(
+              children: [
+                // Search Bar
+                _buildSearchBar(),
+                
+                // Filters
+                _buildFilters(),
+                
+                // Content
+                Expanded(
+                  child: _buildContent(previewsState),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -138,26 +172,46 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
       padding: const EdgeInsets.all(20),
       child: TextField(
         controller: _searchController,
-        style: const TextStyle(color: Colors.white),
+        style: GoogleFonts.poppins(
+          color: Colors.black,
+          fontSize: 16,
+        ),
         decoration: InputDecoration(
           hintText: 'Buscar por tema...',
-          hintStyle: TextStyle(color: Colors.grey[500]),
-          prefixIcon: const Icon(Icons.search, color: Colors.grey),
+          hintStyle: GoogleFonts.poppins(
+            color: Colors.grey.shade500,
+            fontSize: 16,
+          ),
+          prefixIcon: Icon(
+            CupertinoIcons.search,
+            color: _searchQuery.isNotEmpty 
+                ? const Color(0xFF5B1DF4)
+                : Colors.grey.shade500,
+            size: 20,
+          ),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
                   onPressed: _clearSearch,
-                  icon: const Icon(Icons.clear, color: Colors.grey),
+                  icon: Icon(
+                    CupertinoIcons.clear_circled_solid,
+                    color: Colors.grey.shade500,
+                    size: 20,
+                  ),
                 )
               : null,
           filled: true,
-          fillColor: const Color(0xFF2D2D2D),
+          fillColor: Colors.grey.shade50,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: Colors.grey.shade200),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF5B1DF4), width: 2),
           ),
         ),
         onChanged: (value) {
@@ -210,18 +264,26 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF2D2D2D),
+          color: isSelected ? const Color(0xFF5B1DF4) : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF4B5563),
+            color: isSelected ? const Color(0xFF5B1DF4) : Colors.grey.shade200,
+            width: 1,
           ),
+          boxShadow: isSelected ? [
+            BoxShadow(
+              color: const Color(0xFF5B1DF4).withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ] : null,
         ),
         child: Text(
           label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.grey[300],
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+          style: GoogleFonts.poppins(
+            color: isSelected ? Colors.white : Colors.grey.shade700,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
           ),
           textAlign: TextAlign.center,
         ),
@@ -233,7 +295,7 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
     if (state is PreviewsListLoading) {
       return const Center(
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5B1DF4)),
         ),
       );
     }
@@ -244,38 +306,46 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.error_outline,
-              color: Colors.red,
-              size: 64,
+              CupertinoIcons.exclamationmark_triangle,
+              color: const Color(0xFF5B1DF4),
+              size: 48,
             ),
             const SizedBox(height: 16),
             Text(
               'Error al cargar contenidos',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
+              style: GoogleFonts.poppins(
+                color: Colors.black,
+                fontSize: 20,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               state.message,
-              style: TextStyle(
-                color: Colors.grey[400],
-                fontSize: 14,
+              style: GoogleFonts.poppins(
+                color: Colors.grey.shade600,
+                fontSize: 16,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            ElevatedButton(
+            ElevatedButton.icon(
               onPressed: () {
                 ref.read(previewsListProvider.notifier).refreshPreviews();
               },
+              icon: const Icon(CupertinoIcons.refresh),
+              label: const Text('Reintentar'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
+                backgroundColor: const Color(0xFF5B1DF4),
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
-              child: const Text('Reintentar'),
             ),
           ],
         ),
@@ -299,32 +369,40 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(32),
+            width: 80,
+            height: 80,
             decoration: BoxDecoration(
-              color: const Color(0xFF2D2D2D),
-              shape: BoxShape.circle,
+              color: const Color(0xFF5B1DF4).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(40),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF5B1DF4).withOpacity(0.1),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
-            child: Icon(
-              Icons.photo_library_outlined,
-              color: Colors.grey[400],
-              size: 64,
+            child: const Icon(
+              CupertinoIcons.photo,
+              color: Color(0xFF5B1DF4),
+              size: 40,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Text(
             'No hay contenidos',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
+            style: GoogleFonts.poppins(
+              color: Colors.black,
+              fontSize: 24,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             'Crea tu primer post o story para comenzar',
-            style: TextStyle(
-              color: Colors.grey[400],
-              fontSize: 14,
+            style: GoogleFonts.poppins(
+              color: Colors.grey.shade600,
+              fontSize: 16,
             ),
           ),
         ],
@@ -354,11 +432,15 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
       onTap: () => _openPreview(preview),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF2D2D2D),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.grey.shade200,
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -367,42 +449,47 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // Image or Video
             Expanded(
               child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                child: Image.network(
-                  preview.previewImage,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      color: const Color(0xFF1A1A1A),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
-                          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+                child: preview.previewImage.isEmpty
+                    ? Container(
+                        color: Colors.grey.shade50,
+                        child: Center(
+                          child: _getPreviewTypeIcon(preview.type, size: 32),
                         ),
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: const Color(0xFF1A1A1A),
-                      child: const Center(
-                        child: Icon(
-                          Icons.error_outline,
-                          color: Colors.red,
-                          size: 32,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                      )
+                    : preview.type == 'reel' && preview.videoUrl != null && preview.videoUrl!.isNotEmpty
+                        ? _buildVideoThumbnail(preview.videoUrl!)
+                        : Image.network(
+                            preview.previewImage,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                color: Colors.grey.shade50,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF5B1DF4)),
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.grey.shade50,
+                                child: Center(
+                                  child: _getPreviewTypeIcon(preview.type, size: 32),
+                                ),
+                              );
+                            },
+                          ),
               ),
             ),
             
@@ -445,7 +532,7 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
                   Text(
                     preview.topic,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -459,7 +546,7 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
                   Text(
                     _formatDate(preview.createdAt),
                     style: TextStyle(
-                      color: Colors.grey[400],
+                      color: Colors.grey.shade600,
                       fontSize: 12,
                     ),
                   ),
@@ -556,7 +643,7 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
   void _showFilters() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2D2D2D),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -567,8 +654,8 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
           children: [
             Text(
               'Filtros',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: Colors.black,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -578,7 +665,7 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
+                backgroundColor: const Color(0xFF5B1DF4),
                 foregroundColor: Colors.white,
               ),
               child: const Text('Aplicar Filtros'),
@@ -598,6 +685,235 @@ class _PreviewsListPageState extends ConsumerState<PreviewsListPage>
           suggestedCorrections: [], // Load from API if needed
         ),
       ),
+    );
+  }
+
+  Widget _getPreviewTypeIcon(String type, {double size = 32}) {
+    String iconPath;
+    switch (type.toLowerCase()) {
+      case 'reel':
+        iconPath = 'assets/icons/reel.svg';
+        break;
+      case 'story':
+        iconPath = 'assets/icons/storie.svg';
+        break;
+      case 'post':
+      default:
+        iconPath = 'assets/icons/media.svg';
+        break;
+    }
+    
+    return SvgPicture.asset(
+      iconPath,
+      width: size,
+      height: size,
+      colorFilter: ColorFilter.mode(
+        Colors.grey.shade600,
+        BlendMode.srcIn,
+      ),
+    );
+  }
+
+  Widget _buildVideoThumbnail(String videoUrl) {
+    return _VideoThumbnailStatefulWidget(videoUrl: videoUrl);
+  }
+}
+
+class _VideoThumbnailStatefulWidget extends StatefulWidget {
+  final String videoUrl;
+
+  const _VideoThumbnailStatefulWidget({required this.videoUrl});
+
+  @override
+  State<_VideoThumbnailStatefulWidget> createState() => _VideoThumbnailStatefulWidgetState();
+}
+
+class _VideoThumbnailStatefulWidgetState extends State<_VideoThumbnailStatefulWidget> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeVideo();
+  }
+
+  Future<void> _initializeVideo() async {
+    try {
+      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+        ..setLooping(false)
+        ..setVolume(0.0);
+      
+      _controller!.addListener(() {
+        if (_controller!.value.isInitialized && mounted) {
+          setState(() {
+            _isInitialized = true;
+            _hasError = false;
+          });
+        }
+        if (_controller!.value.hasError && mounted) {
+          setState(() {
+            _hasError = true;
+            _isInitialized = false;
+          });
+        }
+      });
+
+      // Reducir timeout a 5 segundos para que falle más rápido y muestre placeholder
+      await _controller!.initialize().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw Exception('Video initialization timeout');
+        },
+      );
+      
+      // Ir al primer frame
+      await _controller!.seekTo(Duration.zero);
+      
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+          _hasError = false;
+        });
+      }
+    } catch (e) {
+      print('Error inicializando thumbnail de video: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isInitialized = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        if (_isInitialized && !_hasError && _controller != null)
+          // Mostrar el primer frame del video
+          SizedBox.expand(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _controller!.value.size.width,
+                height: _controller!.value.size.height,
+                child: VideoPlayer(_controller!),
+              ),
+            ),
+          )
+        else if (_hasError)
+          // Error state
+          Container(
+            color: Colors.grey.shade50,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: Colors.grey.shade400,
+                    size: 32,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Error al cargar video',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          // Loading state - mostrar placeholder más rápido
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.grey.shade800,
+                  Colors.grey.shade900,
+                ],
+              ),
+            ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_circle_outline,
+                          color: Colors.white70,
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Video',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.white70),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        
+        // Play button overlay (siempre visible)
+        Center(
+          child: Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.6),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.play_arrow,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,27 +1,41 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  // Colores principales basados en el logo de magneto empleos
-  static const Color primaryColor = Color(0xFF00D4AA); // Verde vibrante del logo
-  static const Color primaryVariant = Color(0xFF00B894); // Verde más oscuro
-  static const Color secondaryColor = Color(0xFF1E3A8A); // Azul oscuro del fondo
-  static const Color secondaryVariant = Color(0xFF1E40AF); // Azul más claro
+  // ============================================
+  // PALETA DE COLORES - IDENTIDAD DE MARCA
+  // ============================================
+  
+  // Colores principales según guía de marca
+  static const Color darkPurple = Color(0xFF200054); // Morado oscuro - CMYK: C:100 M:100 Y:32 K:36, RGB: R:32 G:0 B:84
+  static const Color purple = Color(0xFF7C00FF); // Púrpura - CMYK: C:80 M:80 Y:0 K:0, RGB: R:124 G:0 B:255
+  static const Color mintGreen = Color(0xFF22D3B7); // Verde menta/teal - CMYK: C:66 M:0 Y:40 K:0
+  
+  // Colores del logotipo (solo para logo)
+  static const Color logoGreen = Color(0xFF0CBB4E); // Verde brillante del logo
+  static const Color logoLightGreen = Color(0xFF3DC971); // Verde claro del logo
+  static const Color logoDarkBlue = Color(0xFF001B38); // Azul muy oscuro del logo
+  
+  // Colores principales de la app (basados en la paleta de marca)
+  static const Color primaryColor = purple; // Púrpura principal
+  static const Color primaryVariant = darkPurple; // Morado oscuro
+  static const Color secondaryColor = mintGreen; // Verde menta
+  static const Color secondaryVariant = Color(0xFF1AB89A); // Variante del verde menta
   
   // Colores de fondo
-  static const Color backgroundColor = Color(0xFFF8FAFC); // Gris muy claro
-  static const Color surfaceColor = Color(0xFFFFFFFF); // Blanco puro
-  static const Color cardColor = Color(0xFFFFFFFF); // Blanco puro
+  static const Color backgroundColor = Color(0xFFFFFFFF); // Fondo principal blanco
+  static const Color surfaceColor = Color(0xFFFFFFFF); // Superficies claras
+  static const Color cardColor = Color(0xFFFFFFFF);
   
-  // Colores de texto
-  static const Color textPrimary = Color(0xFF1E293B); // Azul muy oscuro
-  static const Color textSecondary = Color(0xFF64748B); // Gris azulado
-  static const Color textTertiary = Color(0xFF94A3B8); // Gris claro
+  // Colores de texto (modo claro)
+  static const Color textPrimary = Color(0xFF1A1A1A); // Casi negro para máximo contraste
+  static const Color textSecondary = Color(0xFF6B7280); // Gris medio para texto secundario
+  static const Color textTertiary = Color(0xFF9CA3AF); // Gris claro para texto terciario
   
   // Colores de estado
-  static const Color successColor = Color(0xFF00D4AA); // Verde del logo
-  static const Color errorColor = Color(0xFFEF4444); // Rojo
-  static const Color warningColor = Color(0xFFF59E0B); // Amarillo
-  static const Color infoColor = Color(0xFF1E3A8A); // Azul del logo
+  static const Color successColor = mintGreen; // Usar verde menta para éxito
+  static const Color errorColor = Color(0xFFEF4444); // Rojo moderno
+  static const Color warningColor = Color(0xFFF59E0B); // Amarillo/naranja
+  static const Color infoColor = Color(0xFF3B82F6); // Azul para información
   
   // Colores de gradiente basados en el logo
   static const LinearGradient primaryGradient = LinearGradient(
@@ -36,9 +50,9 @@ class AppConstants {
     end: Alignment.bottomRight,
   );
   
-  // Gradiente principal de la marca (azul a verde)
+  // Gradiente principal de la marca (morado profundo → morado)
   static const LinearGradient brandGradient = LinearGradient(
-    colors: [secondaryColor, primaryColor],
+    colors: [primaryVariant, primaryColor],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

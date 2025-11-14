@@ -7,7 +7,8 @@ part 'message_model.g.dart';
 class MessageModel with _$MessageModel {
   const factory MessageModel({
     required String message,
-    required String recipientId,
+    String? recipientId,
+    String? conversationId,
     String? senderName,
   }) = _MessageModel;
 

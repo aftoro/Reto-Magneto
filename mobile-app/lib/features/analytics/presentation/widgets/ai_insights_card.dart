@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../data/models/analytics_entity.dart';
 
@@ -67,7 +68,7 @@ class AIInsightsCard extends StatelessWidget {
           // Comportamiento de usuarios
           _buildInsightSection(
             'Comportamiento de Usuarios',
-            Icons.people,
+            'assets/icons/users.svg',
             [
               insights.userBehavior.engagementLevel,
               insights.userBehavior.profileCompletion,
@@ -79,17 +80,27 @@ class AIInsightsCard extends StatelessWidget {
     );
   }
 
-  Widget _buildInsightSection(String title, IconData icon, List<String> items) {
+  Widget _buildInsightSection(String title, dynamic icon, List<String> items) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(
-              icon,
-              color: Colors.white.withOpacity(0.8),
-              size: 16,
-            ),
+            icon is String
+                ? SvgPicture.asset(
+                    icon,
+                    width: 16,
+                    height: 16,
+                    colorFilter: ColorFilter.mode(
+                      Colors.white.withOpacity(0.8),
+                      BlendMode.srcIn,
+                    ),
+                  )
+                : Icon(
+                    icon as IconData,
+                    color: Colors.white.withOpacity(0.8),
+                    size: 16,
+                  ),
             const SizedBox(width: AppConstants.spacingS),
             Text(
               title,

@@ -60,17 +60,33 @@ class PostsAnalyticsEntity with _$PostsAnalyticsEntity {
       _$PostsAnalyticsEntityFromJson(json);
 
   factory PostsAnalyticsEntity.fromApiJson(Map<String, dynamic> data) {
+    final hasSummary = data.containsKey('summary');
+    final summaryData = hasSummary
+        ? (data['summary'] as Map<String, dynamic>? ?? {})
+        : {
+            'totalPosts': data['totalPosts'],
+            'totalComments': data['totalComments'],
+            'totalLikes': data['totalLikes'] ?? 0,
+            'avgEngagement': data['avgEngagement'],
+            'aiResponses': data['aiResponses'],
+            'userComments': data['userComments'],
+          };
+
+    final recentRaw = (data['recentPosts'] as List?) ?? (data['posts'] as List?) ?? [];
+
     return PostsAnalyticsEntity(
-      summary: PostsSummaryEntity.fromApiJson(data['summary'] ?? {}),
+      summary: PostsSummaryEntity.fromApiJson(summaryData),
       topSectors: (data['topSectors'] as List?)
-          ?.map((item) => TopSectorEntity.fromApiJson(item))
-          .toList() ?? [],
+              ?.map((item) => TopSectorEntity.fromApiJson(item as Map<String, dynamic>))
+              .toList() ??
+          [],
       topPositions: (data['topPositions'] as List?)
-          ?.map((item) => TopPositionEntity.fromApiJson(item))
-          .toList() ?? [],
-      recentPosts: (data['recentPosts'] as List?)
-          ?.map((item) => RecentPostEntity.fromApiJson(item))
-          .toList() ?? [],
+              ?.map((item) => TopPositionEntity.fromApiJson(item as Map<String, dynamic>))
+              .toList() ??
+          [],
+      recentPosts: recentRaw
+              .map((item) => RecentPostEntity.fromApiJson(item as Map<String, dynamic>))
+              .toList(),
     );
   }
 }
@@ -154,11 +170,13 @@ class RecentPostEntity with _$RecentPostEntity {
     return RecentPostEntity(
       id: data['id']?.toString() ?? '',
       caption: data['caption']?.toString() ?? '',
-      comments: data['comments'] as int? ?? 0,
+      comments: data['comments'] as int? ?? data['totalComments'] as int? ?? 0,
       likes: data['likes'] as int? ?? 0,
-      createdAt: data['createdAt'] != null 
+      createdAt: data['createdAt'] != null
           ? DateTime.tryParse(data['createdAt'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+          : (data['created_at'] != null
+              ? DateTime.tryParse(data['created_at'].toString()) ?? DateTime.now()
+              : DateTime.now()),
     );
   }
 }
@@ -176,17 +194,31 @@ class ConversationsAnalyticsEntity with _$ConversationsAnalyticsEntity {
       _$ConversationsAnalyticsEntityFromJson(json);
 
   factory ConversationsAnalyticsEntity.fromApiJson(Map<String, dynamic> data) {
+    // Soportar formatos: con summary o plano
+    final hasSummary = data.containsKey('summary');
+    final summaryData = hasSummary
+        ? (data['summary'] as Map<String, dynamic>? ?? {})
+        : {
+            'totalConversations': data['totalConversations'],
+            'activeConversations': data['activeConversations'],
+            'avgCompletion': data['avgCompletion'],
+            'messageStats': data['messageStats'] ?? {},
+          };
+
     return ConversationsAnalyticsEntity(
-      summary: ConversationsSummaryEntity.fromApiJson(data['summary'] ?? {}),
+      summary: ConversationsSummaryEntity.fromApiJson(summaryData),
       topProfessions: (data['topProfessions'] as List?)
-          ?.map((item) => TopProfessionEntity.fromApiJson(item))
-          .toList() ?? [],
+              ?.map((item) => TopProfessionEntity.fromApiJson(item as Map<String, dynamic>))
+              .toList() ??
+          [],
       topLocations: (data['topLocations'] as List?)
-          ?.map((item) => TopLocationEntity.fromApiJson(item))
-          .toList() ?? [],
+              ?.map((item) => TopLocationEntity.fromApiJson(item as Map<String, dynamic>))
+              .toList() ??
+          [],
       experienceDistribution: (data['experienceDistribution'] as List?)
-          ?.map((item) => ExperienceDistributionEntity.fromApiJson(item))
-          .toList() ?? [],
+              ?.map((item) => ExperienceDistributionEntity.fromApiJson(item as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
   }
 }
@@ -369,10 +401,13 @@ class AnalyticsResponse with _$AnalyticsResponse {
       _$AnalyticsResponseFromJson(json);
 
   factory AnalyticsResponse.fromApiJson(Map<String, dynamic> data) {
+    final analyticsData = (data['analytics'] as Map<String, dynamic>?) ??
+        (data['data'] as Map<String, dynamic>?) ??
+        {};
     return AnalyticsResponse(
       success: data['success'] as bool? ?? false,
       message: data['message']?.toString() ?? '',
-      analytics: AnalyticsEntity.fromApiJson(data['analytics'] ?? {}),
+      analytics: AnalyticsEntity.fromApiJson(analyticsData),
     );
   }
 }

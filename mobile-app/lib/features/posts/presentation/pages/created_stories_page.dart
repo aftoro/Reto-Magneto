@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/constants/app_constants.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'dart:ui';
 import '../../../stories/presentation/providers/stories_provider.dart';
 import '../../../stories/data/models/story_entity.dart';
+import '../../../../core/constants/app_constants.dart';
 
 class CreatedStoriesPage extends ConsumerStatefulWidget {
   const CreatedStoriesPage({super.key});
@@ -19,7 +22,7 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
     super.initState();
     // Cargar stories cuando se inicializa la página
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(storiesNotifierProvider.notifier).loadStories();
+      ref.read(storiesNotifierProvider.notifier).loadStoriesByStatus(status: _selectedStatus);
     });
   }
 
@@ -28,168 +31,85 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
     final storiesState = ref.watch(storiesNotifierProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0F0F0F),
-              Color(0xFF1A1A1A),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Custom Header
-              Container(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-                child: Row(
-                  children: [
-                    // Profile Avatar
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Icon(
-                        Icons.auto_stories,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Title and Subtitle
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Stories Creadas',
-                            style: TextStyle(
-                              color: Color(0xFFE5E7EB),
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Text(
-                            'Tus stories publicadas en Instagram',
-                            style: TextStyle(
-                              color: Color(0xFF9CA3AF),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Stats Container
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1F1F1F),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFF2D2D2D),
-                          width: 1,
-                        ),
-                      ),
-                      child: storiesState.when(
-                        initial: () => const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
-                              color: Color(0xFF8B5CF6),
-                              size: 16,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              '0 stories',
-                              style: TextStyle(
-                                color: Color(0xFFE5E7EB),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        loading: () => const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
-                              ),
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Cargando...',
-                              style: TextStyle(
-                                color: Color(0xFFE5E7EB),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        loaded: (stories, total, limit, offset) => Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.auto_awesome,
-                              color: Color(0xFF8B5CF6),
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$total stories',
-                              style: const TextStyle(
-                                color: Color(0xFFE5E7EB),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        error: (error) => const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              color: Color(0xFFEF4444),
-                              size: 16,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Error',
-                              style: TextStyle(
-                                color: Color(0xFFEF4444),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+      backgroundColor: AppConstants.backgroundColor,
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          // SliverAppBar con blur glass effect como Chats
+          SliverAppBar(
+            expandedHeight: 70,
+            collapsedHeight: 70,
+            pinned: true,
+            clipBehavior: Clip.none,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            automaticallyImplyLeading: false,
+            toolbarHeight: 70,
+            flexibleSpace: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: AppConstants.textTertiary.withOpacity(0.2),
+                    width: 1,
+                  ),
                 ),
               ),
-              
-              // Status Filter
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Row(
+                          children: [
+                            // Logo
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                          color: AppConstants.primaryColor.withOpacity(0.1),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: Image.asset(
+                                  'assets/images/logo_m.png',
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Stories',
+                              style: GoogleFonts.poppins(
+                          color: AppConstants.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                        icon: Icon(
+                          CupertinoIcons.refresh,
+                          color: AppConstants.textSecondary,
+                        ),
+                              onPressed: () {
+                          ref.read(storiesNotifierProvider.notifier).loadStoriesByStatus(status: _selectedStatus);
+                              },
+                              tooltip: 'Actualizar',
+                            ),
+                          ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // Status Filter con estilo Cupertino
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
                     _buildStatusChip('created', 'Creadas'),
@@ -202,66 +122,122 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
                   ],
                 ),
               ),
-              
-              // Stories List
-              Expanded(
-                child: storiesState.when(
-                  initial: () => const Center(
-                    child: Text(
+            ),
+          ),
+          
+          // Stories List
+          storiesState.when(
+            initial: () => const SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(AppConstants.primaryColor),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
                       'Cargando stories...',
-                      style: TextStyle(color: Color(0xFF9CA3AF)),
+                      style: TextStyle(
+                        color: AppConstants.textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            loading: () => const SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(AppConstants.primaryColor),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Cargando stories...',
+                      style: TextStyle(
+                        color: AppConstants.textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            loaded: (stories, total, limit, offset) => stories.isEmpty
+                ? SliverFillRemaining(child: _buildEmptyState())
+                : SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        return Padding(
+                          padding: EdgeInsets.fromLTRB(20, index == 0 ? 8 : 4, 20, 4),
+                          child: _buildStoryCard(stories[index]),
+                        );
+                      },
+                      childCount: stories.length,
                     ),
                   ),
-                  loading: () => const Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
-                    ),
-                  ),
-                  loaded: (stories, total, limit, offset) => stories.isEmpty
-                      ? _buildEmptyState()
-                      : _buildStoriesList(stories),
-                  error: (error) => Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 64,
-                          color: AppConstants.errorColor,
+            error: (error) => SliverFillRemaining(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(40),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        CupertinoIcons.exclamationmark_triangle,
+                        color: AppConstants.primaryColor,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error al cargar stories',
+                        style: GoogleFonts.poppins(
+                          color: AppConstants.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(height: AppConstants.spacingM),
-                        const Text(
-                          'Error al cargar stories',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFFE5E7EB),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Verifica tu conexión e intenta de nuevo',
+                        style: GoogleFonts.poppins(
+                          color: AppConstants.textSecondary,
+                          fontSize: 16,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          ref.read(storiesNotifierProvider.notifier).loadStoriesByStatus(status: _selectedStatus);
+                        },
+                        icon: const Icon(CupertinoIcons.refresh),
+                        label: const Text('Reintentar'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppConstants.primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
-                        const SizedBox(height: AppConstants.spacingS),
-                        Text(
-                          error,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: AppConstants.spacingL),
-                        ElevatedButton(
-                          onPressed: () {
-                            ref.read(storiesNotifierProvider.notifier).refreshStories();
-                          },
-                          child: const Text('Reintentar'),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -273,23 +249,35 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
         setState(() {
           _selectedStatus = status;
         });
-        ref.read(storiesNotifierProvider.notifier).loadStoriesByStatus(status: status);
+        ref.read(storiesNotifierProvider.notifier).loadStoriesByStatus(
+          status: status,
+          limit: 20,
+          offset: 0,
+        );
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF2D2D2D),
-          borderRadius: BorderRadius.circular(16),
+          color: isSelected ? AppConstants.primaryColor : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF4B5563),
+            color: isSelected ? AppConstants.primaryColor : Colors.grey.shade200,
+            width: 1,
           ),
+          boxShadow: isSelected ? [
+            BoxShadow(
+              color: AppConstants.primaryColor.withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ] : null,
         ),
         child: Text(
           label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : const Color(0xFF9CA3AF),
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+          style: GoogleFonts.poppins(
+            color: isSelected ? Colors.white : AppConstants.textSecondary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -302,32 +290,40 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(24),
+            width: 80,
+            height: 80,
             decoration: BoxDecoration(
-              color: const Color(0xFF1F1F1F),
-              borderRadius: BorderRadius.circular(50),
+              color: AppConstants.primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(40),
+              boxShadow: [
+                BoxShadow(
+                  color: AppConstants.primaryColor.withOpacity(0.1),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
-            child: const Icon(
-              Icons.auto_stories_outlined,
-              size: 48,
-              color: Color(0xFF6B7280),
+            child: Icon(
+              CupertinoIcons.book,
+              color: AppConstants.primaryColor,
+              size: 40,
             ),
           ),
-          const SizedBox(height: 24),
-          const Text(
+          const SizedBox(height: 16),
+          Text(
             'No hay stories',
-            style: TextStyle(
-              fontSize: 20,
+            style: GoogleFonts.poppins(
+              color: AppConstants.textPrimary,
+              fontSize: 24,
               fontWeight: FontWeight.w600,
-              color: Color(0xFFE5E7EB),
             ),
           ),
           const SizedBox(height: 8),
           Text(
             _getEmptyMessage(),
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF9CA3AF),
+            style: GoogleFonts.poppins(
+              color: AppConstants.textSecondary,
+              fontSize: 16,
             ),
             textAlign: TextAlign.center,
           ),
@@ -351,33 +347,23 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
     }
   }
 
-  Widget _buildStoriesList(List<StoryEntity> stories) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(20),
-      itemCount: stories.length,
-      itemBuilder: (context, index) {
-        final story = stories[index];
-        return _buildStoryCard(story);
-      },
-    );
-  }
 
   Widget _buildStoryCard(StoryEntity story) {
     final statusColor = _getStatusColor(story.status);
     
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1F1F1F),
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: Colors.grey.shade200,
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
             offset: const Offset(0, 2),
           ),
         ],
@@ -385,7 +371,7 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           onTap: () {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -424,25 +410,63 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
                       ),
                     ],
                   ),
-                  child: story.imageUrl.isNotEmpty
+                  child: story.imageUrl.isNotEmpty && story.imageUrl != 'null'
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(16),
                           child: Image.network(
                             story.imageUrl,
                             fit: BoxFit.cover,
+                            width: 80,
+                            height: 80,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) {
+                                print('✅ Imagen cargada exitosamente: ${story.imageUrl}');
+                                return child;
+                              }
+                              print('⏳ Cargando imagen: ${story.imageUrl} - ${loadingProgress.cumulativeBytesLoaded}/${loadingProgress.expectedTotalBytes ?? '?'}');
+                              return Container(
+                                color: Colors.grey.shade100,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      AppConstants.primaryColor,
+                                    ),
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              );
+                            },
                             errorBuilder: (context, error, stackTrace) {
-                              return const Icon(
-                                Icons.auto_stories,
-                                color: Colors.white,
+                              print('❌ Error cargando imagen de story: $error');
+                              print('❌ URL: ${story.imageUrl}');
+                              print('❌ StackTrace: $stackTrace');
+                              return Container(
+                                color: Colors.grey.shade100,
+                                child: Icon(
+                                  CupertinoIcons.photo,
+                                  color: AppConstants.textSecondary,
                                 size: 32,
+                                ),
                               );
                             },
                           ),
                         )
-                      : const Icon(
-                          Icons.auto_stories,
-                          color: Colors.white,
+                      : Builder(
+                          builder: (context) {
+                            print('⚠️ Story sin imagen o URL vacía: imageUrl="${story.imageUrl}"');
+                            return Container(
+                              color: Colors.grey.shade100,
+                              child: Icon(
+                          CupertinoIcons.book,
+                                color: AppConstants.textSecondary,
                           size: 32,
+                              ),
+                            );
+                          },
                         ),
                 ),
                 const SizedBox(width: 16),
@@ -453,10 +477,11 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
                     children: [
                       Text(
                         story.aiPrompt ?? 'Story generada con IA',
-                        style: const TextStyle(
-                          color: Color(0xFFE5E7EB),
+                        style: GoogleFonts.poppins(
+                          color: AppConstants.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -503,30 +528,30 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
                       Row(
                         children: [
                           Icon(
-                            Icons.schedule,
-                            color: const Color(0xFF6B7280),
+                            CupertinoIcons.time,
+                            color: AppConstants.textSecondary,
                             size: 14,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             _formatTimestamp(story.createdAt),
-                            style: const TextStyle(
-                              color: Color(0xFF6B7280),
+                            style: GoogleFonts.poppins(
+                              color: AppConstants.textSecondary,
                               fontSize: 12,
                             ),
                           ),
                           if (story.publishedAt != null) ...[
                             const SizedBox(width: 16),
                             Icon(
-                              Icons.publish,
-                              color: const Color(0xFF6B7280),
+                              CupertinoIcons.arrow_up_circle,
+                              color: AppConstants.textSecondary,
                               size: 14,
                             ),
                             const SizedBox(width: 4),
                             Text(
                               _formatTimestamp(story.publishedAt!),
-                              style: const TextStyle(
-                                color: Color(0xFF6B7280),
+                              style: GoogleFonts.poppins(
+                                color: AppConstants.textSecondary,
                                 fontSize: 12,
                               ),
                             ),
@@ -539,13 +564,13 @@ class _CreatedStoriesPageState extends ConsumerState<CreatedStoriesPage> {
                 // Action Button
                 Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2D2D2D),
+                    color: Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: IconButton(
-                    icon: const Icon(
-                      Icons.open_in_new,
-                      color: Color(0xFF9CA3AF),
+                    icon: Icon(
+                      CupertinoIcons.arrow_up_right,
+                      color: AppConstants.textSecondary,
                       size: 20,
                     ),
                     onPressed: () {

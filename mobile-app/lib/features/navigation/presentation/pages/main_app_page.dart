@@ -1,15 +1,26 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/app_strings.dart';
+import '../../../../core/utils/responsive.dart';
 import '../../../conversations/presentation/providers/conversation_provider.dart';
 import '../../../conversations/data/models/conversation_entity.dart';
 import '../../../conversations/presentation/pages/chat_page.dart';
 import '../../../preview/presentation/pages/preview_creation_page.dart';
+import '../../../preview/presentation/providers/reel_generation_monitor_provider.dart';
+import '../../../preview/presentation/pages/reel_preview_page.dart';
 import '../../../posts/presentation/pages/created_posts_page.dart';
 import '../../../posts/presentation/pages/created_stories_page.dart';
 import '../../../analytics/presentation/pages/analytics_page.dart';
 import '../../../search/presentation/providers/search_provider.dart';
 import '../../../../shared/widgets/floating_create_button.dart';
+import '../../../../shared/widgets/responsive/responsive_scaffold.dart';
+import '../../../../shared/widgets/responsive/web_sidebar.dart';
 
 class MainAppPage extends ConsumerStatefulWidget {
   const MainAppPage({super.key});
@@ -20,12 +31,34 @@ class MainAppPage extends ConsumerStatefulWidget {
 
 class _MainAppPageState extends ConsumerState<MainAppPage> {
   int _currentIndex = 0;
+  
+  /// Método público para restaurar el tab de conversaciones
+  void restoreConversationsTab() {
+    if (mounted && _currentIndex != 1) {
+      setState(() {
+        _currentIndex = 1;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Verificar si hay reels generándose al iniciar la app
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // El monitor verificará automáticamente si hay reels recientes
+        // cuando se inicie el monitoreo desde preview_creation_page
+      }
+    });
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Obtener argumentos de la ruta para establecer el índice inicial
-    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null && args['initialIndex'] != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -46,42 +79,157 @@ class _MainAppPageState extends ConsumerState<MainAppPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Listener para cambios en el estado de generación de reels
+    ref.listen<ReelGenerationState>(reelGenerationMonitorProvider, (previous, next) {
+      if (next.isGenerating && next.topic != null) {
+        // Asegurar que estamos en el dashboard (índice 0)
+        if (_currentIndex != 0) {
+          setState(() {
+            _currentIndex = 0;
+          });
+        }
+        
+        // Mostrar/actualizar toast con progreso
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Generando reel... ${next.progress}%',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppConstants.primaryColor,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else if (next.completedPreview != null) {
+        // Reel completado
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('¡Tu reel está listo!'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Ver',
+              textColor: Colors.white,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ReelPreviewPage(
+                      preview: next.completedPreview!,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      } else if (next.error != null) {
+        // Error en la generación
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.error!),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    });
+    
+    // Verificar autenticación al construir la página
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final session = Supabase.instance.client.auth.currentSession;
+      final user = Supabase.instance.client.auth.currentUser;
+      
+      if (session == null || user == null || session.accessToken.isEmpty) {
+        print('🔓 MainAppPage: No hay sesión, redirigiendo a login...');
+        Navigator.of(context).pushReplacementNamed('/login');
+      }
+    });
+    
+    // Verificar que MediaQuery esté disponible antes de usar context.isMobile
+    final mediaQuery = MediaQuery.maybeOf(context);
+    final isMobileSize = mediaQuery != null ? context.isMobile : false;
+
+    // En web con pantalla grande, usar sidebar
+    if (Responsive.isWeb && !isMobileSize) {
+      return ResponsiveScaffold(
+        body: IndexedStack(index: _currentIndex, children: _pages),
+        sidebar: WebSidebar(
+          currentIndex: _currentIndex,
+          onItemSelected: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+        ),
+        floatingActionButton: FloatingCreateButton(
+          onItemSelected: (item) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PreviewCreationPage(initialType: item),
+              ),
+            );
+          },
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      );
+    }
+
+    // En mobile, usar bottom navigation
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _pages),
       floatingActionButton: FloatingCreateButton(
         onItemSelected: (item) {
-          // Navigate to general creation page for all types (posts, stories, reels)
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => PreviewCreationPage(
-                initialType: item,
-              ),
+              builder: (context) => PreviewCreationPage(initialType: item),
             ),
           );
         },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF1F1F1F),
-          border: Border(
-            top: BorderSide(
-              color: const Color(0xFF2D2D2D),
-              width: 1,
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(color: AppConstants.textTertiary.withValues(alpha: 0.2), width: 1),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 20,
+                offset: const Offset(0, -5),
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, -5),
-            ),
-          ],
-        ),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(
@@ -91,40 +239,36 @@ class _MainAppPageState extends ConsumerState<MainAppPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                Expanded(
-                  child: _buildNavItem(
-                    icon: Icons.analytics_outlined,
-                    activeIcon: Icons.analytics,
-                    label: 'Stats',
-                    index: 0,
+                  Expanded(
+                    child: _buildNavItem(
+                      svgPath: 'assets/icons/charts.svg',
+                      label: AppStrings.stats,
+                      index: 0,
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: _buildNavItem(
-                    icon: Icons.chat_bubble_outline,
-                    activeIcon: Icons.chat_bubble,
-                    label: 'Chats',
-                    index: 1,
+                  Expanded(
+                    child: _buildNavItem(
+                      svgPath: 'assets/icons/chat.svg',
+                      label: AppStrings.chats,
+                      index: 1,
+                    ),
                   ),
-                ),
-                // Espacio para el botón flotante
-                const SizedBox(width: 60),
-                Expanded(
-                  child: _buildNavItem(
-                    icon: Icons.add_photo_alternate_outlined,
-                    activeIcon: Icons.add_photo_alternate,
-                    label: 'Posts',
-                    index: 2,
+                  // Espacio para el botón flotante
+                  const SizedBox(width: 60),
+                  Expanded(
+                    child: _buildNavItem(
+                      svgPath: 'assets/icons/media.svg',
+                      label: AppStrings.posts,
+                      index: 2,
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: _buildNavItem(
-                    icon: Icons.auto_stories_outlined,
-                    activeIcon: Icons.auto_stories,
-                    label: 'Stories',
-                    index: 3,
+                  Expanded(
+                    child: _buildNavItem(
+                      svgPath: 'assets/icons/storie.svg',
+                      label: AppStrings.stories,
+                      index: 3,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -134,13 +278,12 @@ class _MainAppPageState extends ConsumerState<MainAppPage> {
   }
 
   Widget _buildNavItem({
-    required IconData icon,
-    required IconData activeIcon,
+    required String svgPath,
     required String label,
     required int index,
   }) {
     final isActive = _currentIndex == index;
-    
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -153,38 +296,20 @@ class _MainAppPageState extends ConsumerState<MainAppPage> {
           vertical: AppConstants.spacingS,
         ),
         decoration: BoxDecoration(
-          gradient: isActive 
-              ? const LinearGradient(
-                  colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)], // Blue gradient for dark mode
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null,
-          color: isActive ? null : Colors.transparent,
+          color: isActive
+              ? AppConstants.primaryColor.withValues(alpha: 0.1)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isActive ? activeIcon : icon,
-              color: isActive 
-                  ? Colors.white
-                  : const Color(0xFF6B7280),
-              size: 24,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isActive 
-                    ? Colors.white
-                    : const Color(0xFF6B7280),
-                fontSize: 12,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+        child: SvgPicture.asset(
+          svgPath,
+          width: 24,
+          height: 24,
+          fit: BoxFit.contain,
+          colorFilter: ColorFilter.mode(
+            isActive ? AppConstants.primaryColor : AppConstants.textSecondary,
+            BlendMode.srcIn,
               ),
-            ),
-          ],
         ),
       ),
     );
@@ -208,294 +333,757 @@ class _ConversationsPageState extends ConsumerState<_ConversationsPage> {
     });
   }
 
-  List<ConversationWithMessages> _getDemoConversations() {
-    return [
-      ConversationWithMessages(
-        conversation: ConversationEntity(
-          id: 'demo-1',
-          platform: 'instagram',
-          conversationType: 'dm',
-          userId: 'demo_user_1',
-          username: 'juan_perez',
-          status: 'active',
-          createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-          updatedAt: DateTime.now().subtract(const Duration(minutes: 30)),
-          userFullName: 'Juan Pérez',
-          userProfession: 'Desarrollador Full Stack',
-          userCurrentEmotion: 'happy',
-          userLocation: 'Bogotá, Colombia',
+  // Helper para obtener el nombre de la emoción en español
+  String _getEmotionDisplayName(String? emotion) {
+    switch (emotion?.toLowerCase()) {
+      case 'happy':
+        return 'Feliz';
+      case 'excited':
+        return 'Emocionado';
+      case 'hopeful':
+        return 'Esperanzado';
+      case 'grateful':
+        return 'Agradecido';
+      case 'calm':
+        return 'Calmado';
+      case 'sad':
+        return 'Triste';
+      case 'angry':
+        return 'Enojado';
+      case 'stressed':
+        return 'Estresado';
+      case 'disappointed':
+        return 'Decepcionado';
+      case 'confused':
+        return 'Confundido';
+      case 'curious':
+        return 'Curioso';
+      case 'neutral':
+        return 'Neutral';
+      default:
+        return 'Desconocido';
+    }
+  }
+
+  // Helper para obtener la descripción de la emoción
+  String _getEmotionDescription(String? emotion) {
+    switch (emotion?.toLowerCase()) {
+      case 'happy':
+        return 'Expresión de alegría y satisfacción. Usuario se siente contento y positivo.';
+      case 'excited':
+        return 'Muestra entusiasmo y energía. Usuario está motivado y dinámico.';
+      case 'hopeful':
+        return 'Indica optimismo y expectativa positiva. Usuario tiene esperanzas.';
+      case 'grateful':
+        return 'Refleja aprecio y gratitud. Usuario se siente agradecido.';
+      case 'calm':
+        return 'Denota serenidad y tranquilidad. Usuario está relajado.';
+      case 'sad':
+        return 'Expresión de tristeza o melancolía. Usuario se siente abatido.';
+      case 'angry':
+        return 'Muestra enojo o irritación. Usuario está molesto o frustrado.';
+      case 'stressed':
+        return 'Indica tensión o preocupación. Usuario se siente presionado.';
+      case 'disappointed':
+        return 'Refleja desilusión o frustración. Usuario esperaba algo mejor.';
+      case 'confused':
+        return 'Muestra perplejidad o falta de claridad. Usuario necesita aclaración.';
+      case 'curious':
+        return 'Indica interés y deseo de saber más. Usuario quiere aprender.';
+      case 'neutral':
+        return 'Expresión sin emoción predominante. Usuario está equilibrado.';
+      default:
+        return 'Emoción no reconocida por el sistema.';
+    }
+  }
+
+  // Widget común para el contenido de emociones
+  Widget _buildEmotionContent(List<String> emotions, ScrollController? controller) {
+    return Column(
+      children: [
+        // Header - Título
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 16,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            'Guía de Emociones',
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.visible,
+            style: GoogleFonts.poppins(
+              color: AppConstants.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              decoration: TextDecoration.none,
+            ),
+          ),
         ),
-        lastMessage: MessageEntity(
-          id: 'demo-msg-1',
-          conversacionId: 'demo-1',
-          content: 'Hola! Estoy interesado en la vacante de desarrollador',
-          messageType: 'incoming',
-          authorName: 'Juan Pérez',
-          authorType: 'user',
-          createdAt: DateTime.now().subtract(const Duration(minutes: 30)),
-          deliveryStatus: 'delivered',
+
+        // Divider sutil
+        Container(
+          height: 1,
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.transparent,
+                AppConstants.textTertiary.withValues(alpha: 0.1),
+                Colors.transparent,
+              ],
+            ),
+          ),
         ),
-        unreadCount: 1,
-      ),
-      ConversationWithMessages(
-        conversation: ConversationEntity(
-          id: 'demo-2',
-          platform: 'instagram',
-          conversationType: 'dm',
-          userId: 'demo_user_2',
-          username: 'maria_garcia',
-          status: 'active',
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-          updatedAt: DateTime.now().subtract(const Duration(hours: 1)),
-          userFullName: 'María García',
-          userProfession: 'Diseñadora UX/UI',
-          userCurrentEmotion: 'excited',
-          userLocation: 'Medellín, Colombia',
+        
+        // Content - Lista de emociones
+        Expanded(
+          child: ListView.builder(
+            controller: controller,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 20.0,
+              vertical: 12.0,
+            ),
+            itemCount: emotions.length,
+            itemBuilder: (context, index) {
+              final emotion = emotions[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () {
+                    // Acción al tocar la emoción
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white, // Fondo blanco para light mode
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _getEmotionColor(
+                          emotion,
+                        ).withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                        BoxShadow(
+                          color: _getEmotionColor(
+                            emotion,
+                          ).withOpacity(0.1),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(20.0),
+                    child: Row(
+                      children: [
+                        // Avatar de emoción - Estilo moderno
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _getEmotionColor(
+                              emotion,
+                            ).withOpacity(0.1), // Fondo claro para light mode
+                            border: Border.all(
+                              color: _getEmotionColor(
+                                emotion,
+                              ).withOpacity(0.3),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _getEmotionColor(
+                                  emotion,
+                                ).withOpacity(0.2),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: Image.asset(
+                              'assets/images/emotions/$emotion.png',
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _getEmotionColor(
+                                      emotion,
+                                    ).withOpacity(0.1),
+                                  ),
+                                  child: Icon(
+                                    CupertinoIcons.smiley,
+                                    color: _getEmotionColor(
+                                      emotion,
+                                    ),
+                                    size: 28,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        // Información de la emoción
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _getEmotionDisplayName(emotion),
+                                style: GoogleFonts.poppins(
+                                  color: AppConstants.textPrimary,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _getEmotionDescription(emotion),
+                                style: GoogleFonts.manrope(
+                                  color: AppConstants.textSecondary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w400,
+                                  letterSpacing: -0.1,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ),
-        lastMessage: MessageEntity(
-          id: 'demo-msg-2',
-          conversacionId: 'demo-2',
-          content: 'Perfecto! Te envío más información sobre el proceso',
-          messageType: 'outgoing',
-          authorName: 'Magneto Empleos',
-          authorType: 'ai',
-          createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-          deliveryStatus: 'sent',
-          isAiGenerated: true,
-        ),
-        unreadCount: 0,
-      ),
-      ConversationWithMessages(
-        conversation: ConversationEntity(
-          id: 'demo-3',
-          platform: 'instagram',
-          conversationType: 'dm',
-          userId: 'demo_user_3',
-          username: 'carlos_lopez',
-          status: 'active',
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-          updatedAt: DateTime.now().subtract(const Duration(hours: 3)),
-          userFullName: 'Carlos López',
-          userProfession: 'Product Manager',
-          userCurrentEmotion: 'confident',
-          userLocation: 'Cali, Colombia',
-        ),
-        lastMessage: MessageEntity(
-          id: 'demo-msg-3',
-          conversacionId: 'demo-3',
-          content: '¿Cuáles son los beneficios de la empresa?',
-          messageType: 'incoming',
-          authorName: 'Carlos López',
-          authorType: 'user',
-          createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-          deliveryStatus: 'delivered',
-        ),
-        unreadCount: 2,
-      ),
+      ],
+    );
+  }
+
+  // Función para mostrar el bottom sheet de ayuda - Adaptativo para web y móvil
+  void _showEmotionHelpBottomSheet(BuildContext context) {
+    final List<String> emotions = [
+      'happy',
+      'excited',
+      'hopeful',
+      'grateful',
+      'calm',
+      'sad',
+      'angry',
+      'stressed',
+      'disappointed',
+      'confused',
+      'curious',
+      'neutral',
     ];
+
+    // En web, mostrar diálogo centrado
+    if (Responsive.isWeb) {
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(20),
+            child: Container(
+              constraints: const BoxConstraints(
+                maxWidth: 600,
+                maxHeight: 700,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header con botón de cerrar
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Guía de Emociones',
+                          style: GoogleFonts.poppins(
+                            color: AppConstants.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            CupertinoIcons.xmark_circle_fill,
+                            color: AppConstants.textSecondary,
+                          ),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Divider sutil
+                  Container(
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          AppConstants.textTertiary.withValues(alpha: 0.1),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Content - Lista de emociones con scroll
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20.0,
+                        vertical: 12.0,
+                      ),
+                      itemCount: emotions.length,
+                      itemBuilder: (context, index) {
+                        final emotion = emotions[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: () {
+                              // Acción al tocar la emoción
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: _getEmotionColor(
+                                    emotion,
+                                  ).withOpacity(0.3),
+                                  width: 1.5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                  BoxShadow(
+                                    color: _getEmotionColor(
+                                      emotion,
+                                    ).withOpacity(0.1),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              padding: const EdgeInsets.all(20.0),
+                              child: Row(
+                                children: [
+                                  // Avatar de emoción
+                                  Container(
+                                    width: 56,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _getEmotionColor(
+                                        emotion,
+                                      ).withOpacity(0.1),
+                                      border: Border.all(
+                                        color: _getEmotionColor(
+                                          emotion,
+                                        ).withOpacity(0.3),
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _getEmotionColor(
+                                            emotion,
+                                          ).withOpacity(0.2),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipOval(
+                                      child: Image.asset(
+                                        'assets/images/emotions/$emotion.png',
+                                        width: 56,
+                                        height: 56,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Container(
+                                            width: 56,
+                                            height: 56,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: _getEmotionColor(
+                                                emotion,
+                                              ).withOpacity(0.1),
+                                            ),
+                                            child: Icon(
+                                              CupertinoIcons.smiley,
+                                              color: _getEmotionColor(
+                                                emotion,
+                                              ),
+                                              size: 28,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 20),
+                                  // Información de la emoción
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _getEmotionDisplayName(emotion),
+                                          style: GoogleFonts.poppins(
+                                            color: AppConstants.textPrimary,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: -0.3,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          _getEmotionDescription(emotion),
+                                          style: GoogleFonts.manrope(
+                                            color: AppConstants.textSecondary,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w400,
+                                            letterSpacing: -0.1,
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } else {
+      // En móvil, mantener el bottom sheet original
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.75,
+            minChildSize: 0.3,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (_, controller) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Handle Cupertino
+                    Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      width: 36,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: AppConstants.textTertiary.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2.5),
+                      ),
+                    ),
+                    // Contenido común
+                    _buildEmotionContent(emotions, controller),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    }
+  }
+
+  // Helper para obtener el color de la emoción
+  Color _getEmotionColor(String emotion) {
+    switch (emotion.toLowerCase()) {
+      case 'happy':
+        return const Color(0xFF00E676); // Bright Green
+      case 'excited':
+        return const Color(0xFF7B2FFF); // Vibrant Purple
+      case 'hopeful':
+        return const Color(0xFF00C853); // Emerald Green
+      case 'grateful':
+        return const Color(0xFFFFD700); // Gold
+      case 'calm':
+        return const Color(0xFF4CAF50); // Green
+      case 'sad':
+        return const Color(0xFF2196F3); // Blue
+      case 'angry':
+        return const Color(0xFFFF5252); // Coral Red
+      case 'stressed':
+        return const Color(0xFFFF9800); // Orange
+      case 'disappointed':
+        return const Color(0xFF9E9E9E); // Medium Gray
+      case 'confused':
+        return const Color(0xFF9C27B0); // Purple
+      case 'curious':
+        return const Color(0xFF00BCD4); // Cyan
+      case 'neutral':
+        return const Color(0xFF607D8B); // Blue Grey
+      default:
+        return const Color(0xFF9E9E9E); // Default gray
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final conversationState = ref.watch(conversationNotifierProvider);
 
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0F0F0F), // Dark background
-              Color(0xFF1A1A1A), // Darker background
-            ],
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white, // Fondo blanco para modo claro
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppConstants.primaryColor.withValues(alpha: 0.03), // Overlay púrpura muy sutil arriba
+            Colors.transparent, // Desaparece abajo
+          ],
         ),
-        child: SafeArea(
-          child: conversationState.when(
-            initial: () => const Center(
-              child: Text('Inicializando conversaciones...'),
-            ),
-            loading: () => const Center(
-              child: CircularProgressIndicator(),
-            ),
-            loaded: (conversations, stats) => Column(
-              children: [
-                // Custom Header
-                Container(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-                  child: Row(
-                    children: [
-                      // Profile Avatar
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)], // Blue gradient for dark mode
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Icon(
-                          Icons.person,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Title and Subtitle
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Magneto Empleos',
-                              style: TextStyle(
-                                color: Color(0xFFE5E7EB),
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              '${conversations.length} conversaciones',
-                              style: const TextStyle(
-                                color: Color(0xFF9CA3AF),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                        // Connection Status and Refresh Button
-                        Row(
-                          children: [
-                            // Connection Status Indicator
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: conversationState.maybeWhen(
-                                  loaded: (_, __) => const Color(0xFF10B981), // Verde cuando hay datos
-                                  error: (_) => const Color(0xFFEF4444), // Rojo cuando hay error
-                                  orElse: () => const Color(0xFFF59E0B), // Amarillo cuando está cargando
-                                ),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Refresh Button
-                            Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1F1F1F),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFF2D2D2D),
-                                  width: 1,
-                                ),
-                              ),
-                              child: IconButton(
-                                icon: conversationState.maybeWhen(
-                                  loading: () => const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF9CA3AF)),
-                                    ),
-                                  ),
-                                  orElse: () => const Icon(
-                                    Icons.refresh,
-                                    color: Color(0xFF9CA3AF),
-                                    size: 20,
-                                  ),
-                                ),
-                                onPressed: conversationState.maybeWhen(
-                                  loading: () => null,
-                                  orElse: () => () {
-                                    ref.read(conversationNotifierProvider.notifier).refreshConversations();
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ), // Scroll con bouncing siempre
+          slivers: [
+            // AppBar con glass effect
+            SliverAppBar(
+              expandedHeight: 70,
+              collapsedHeight: 70,
+              pinned: true,
+              automaticallyImplyLeading: false,
+              backgroundColor: Colors.transparent,
+              toolbarHeight: 70,
+              flexibleSpace: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white, // Fondo blanco para modo claro
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppConstants.textTertiary.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
                   ),
                 ),
-                
-                // Search Bar
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: _SearchBar(
-                    onSearch: (query) {
-                      ref.read(searchNotifierProvider.notifier).searchImmediate(query);
-                    },
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        // Logo
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Image.asset(
+                              'assets/images/logo_m.png',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          AppStrings.chats,
+                          style: GoogleFonts.poppins(
+                            color: AppConstants.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: Icon(
+                            CupertinoIcons.search,
+                            color: AppConstants.textSecondary,
+                          ),
+                          onPressed: () {
+                            // TODO: Implementar funcionalidad de búsqueda
+                          },
+                          tooltip: 'Buscar',
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            CupertinoIcons.question_circle,
+                            color: AppConstants.textSecondary,
+                          ),
+                          onPressed: () =>
+                              _showEmotionHelpBottomSheet(context),
+                          tooltip: 'Ayuda - Guía de emociones',
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                
-                // Conversations List
-                Expanded(
-                  child: conversations.isEmpty
-                      ? _buildEmptyState()
-                      : _ConversationsList(conversations: conversations),
-                ),
-              ],
+              ),
             ),
-                error: (error) => Column(
-                  children: [
-                    // Offline Banner
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFFF59E0B).withOpacity(0.3),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.wifi_off,
-                            color: Color(0xFFF59E0B),
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'Modo offline - Mostrando datos de ejemplo',
-                              style: TextStyle(
-                                color: Color(0xFFF59E0B),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              ref.read(conversationNotifierProvider.notifier).loadConversations();
-                            },
-                            child: const Text(
-                              'Reintentar',
-                              style: TextStyle(color: Color(0xFFF59E0B)),
-                            ),
-                          ),
-                        ],
-                      ),
+            // Contenido principal
+            conversationState.when(
+              initial: () => SliverToBoxAdapter(
+                child: const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Text(
+                      'Inicializando conversaciones...',
+                      style: TextStyle(color: AppConstants.textSecondary),
                     ),
-                    // Demo Conversations
-                    Expanded(
-                      child: _ConversationsList(
-                        conversations: _getDemoConversations(),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-          ),
+              ),
+              loading: () => SliverToBoxAdapter(
+                child: const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+              loaded: (conversations, stats) => conversations.isEmpty
+                  ? SliverToBoxAdapter(child: _buildEmptyState())
+                  : SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final conversation = conversations[index];
+                        return _WhatsAppConversationTile(
+                          conversation: conversation,
+                        );
+                      }, childCount: conversations.length),
+                    ),
+              error: (error) => SliverToBoxAdapter(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: AppConstants.errorColor.withValues(alpha: 0.6),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Error al cargar conversaciones',
+                          style: GoogleFonts.manrope(
+                            color: AppConstants.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Verifica tu conexión a internet',
+                          style: GoogleFonts.manrope(
+                            fontSize: 14,
+                            color: AppConstants.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: () {
+                            ref
+                                .read(conversationNotifierProvider.notifier)
+                                .loadConversations();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppConstants.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          child: Text(
+                            'Reintentar',
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -503,40 +1091,82 @@ class _ConversationsPageState extends ConsumerState<_ConversationsPage> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1F1F1F),
-              borderRadius: BorderRadius.circular(50),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: AppConstants.primaryColor.withValues(alpha: 0.1), // Púrpura claro para contraste
+                borderRadius: BorderRadius.circular(60),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.chat_bubble_outline,
+                size: 64,
+                color: AppConstants.primaryColor, // Púrpura Magneto
+              ),
             ),
-            child: const Icon(
-              Icons.chat_bubble_outline,
-              size: 48,
-              color: Color(0xFF6B7280),
+            const SizedBox(height: 32),
+            Text(
+              AppStrings.conversationsEmptyTitle,
+              style: GoogleFonts.poppins(
+                fontSize: 24,
+                fontWeight: FontWeight.w600,
+                color: AppConstants.textPrimary,
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'No hay conversaciones',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFFE5E7EB),
+            const SizedBox(height: 12),
+            Text(
+              AppStrings.conversationsEmptyMessage,
+              style: GoogleFonts.manrope(
+                fontSize: 16,
+                color: AppConstants.textSecondary,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Las conversaciones aparecerán aquí cuando\nrecibas mensajes de usuarios',
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF9CA3AF),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppConstants.primaryColor.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.auto_awesome,
+                    color: AppConstants.primaryColor, // Púrpura Magneto
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '¡Magneto IA está activo!',
+                    style: GoogleFonts.manrope(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppConstants.primaryColor, // Púrpura Magneto
+                    ),
+                  ),
+                ],
+              ),
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -563,18 +1193,18 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchNotifierProvider);
-    
+
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: AppConstants.textTertiary.withValues(alpha: 0.2),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -582,31 +1212,21 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
       ),
       child: TextField(
         controller: _searchController,
-        style: const TextStyle(
-          color: Color(0xFFE5E7EB),
-          fontSize: 16,
-        ),
+        style: GoogleFonts.manrope(color: AppConstants.textPrimary, fontSize: 16),
         decoration: InputDecoration(
           hintText: 'Buscar conversaciones y mensajes...',
-          hintStyle: const TextStyle(
-            color: Color(0xFF6B7280),
-            fontSize: 16,
-          ),
+          hintStyle: GoogleFonts.manrope(color: AppConstants.textTertiary, fontSize: 16),
           prefixIcon: Icon(
             Icons.search,
             color: searchState.maybeWhen(
-              loading: () => const Color(0xFF8B5CF6),
-              orElse: () => const Color(0xFF6B7280),
+              loading: () => AppConstants.secondaryColor,
+              orElse: () => AppConstants.textSecondary,
             ),
             size: 20,
           ),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
-                  icon: const Icon(
-                    Icons.clear,
-                    color: Color(0xFF6B7280),
-                    size: 20,
-                  ),
+                  icon: Icon(Icons.clear, color: AppConstants.textSecondary, size: 20),
                   onPressed: () {
                     _searchController.clear();
                     ref.read(searchNotifierProvider.notifier).clearSearch();
@@ -634,49 +1254,28 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
   }
 }
 
-class _ConversationsList extends StatelessWidget {
-  final List<ConversationWithMessages> conversations;
-
-  const _ConversationsList({required this.conversations});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      itemCount: conversations.length,
-      itemBuilder: (context, index) {
-        final conversation = conversations[index];
-        return _InstagramConversationTile(conversation: conversation);
-      },
-    );
-  }
-}
-
-class _InstagramConversationTile extends StatelessWidget {
+class _WhatsAppConversationTile extends StatelessWidget {
   final ConversationWithMessages conversation;
 
-  const _InstagramConversationTile({required this.conversation});
+  const _WhatsAppConversationTile({required this.conversation});
 
   @override
   Widget build(BuildContext context) {
-    final username = conversation.conversation.username ?? 
+    final username =
+        conversation.conversation.username ??
         conversation.conversation.userId.substring(0, 8);
     final lastMessage = conversation.lastMessage?.content ?? 'Sin mensajes';
-    final timestamp = conversation.lastMessage?.createdAt ?? 
-        conversation.conversation.updatedAt ?? 
+    final timestamp =
+        conversation.lastMessage?.createdAt ??
+        conversation.conversation.updatedAt ??
         conversation.conversation.createdAt;
     final isActive = conversation.conversation.status == 'active';
     final unreadCount = conversation.unreadCount ?? 0;
 
     return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        border: Border(
-          bottom: BorderSide(
-            color: const Color(0xFF2D2D2D).withOpacity(0.3),
-            width: 0.5,
-          ),
-        ),
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.transparent, // Mismo color que el fondo principal
       ),
       child: Material(
         color: Colors.transparent,
@@ -687,9 +1286,13 @@ class _InstagramConversationTile extends StatelessWidget {
               MaterialPageRoute(
                 builder: (context) => ChatPage(conversation: conversation),
               ),
-            );
+            ).then((_) {
+              // Restaurar el tab de conversaciones cuando se regrese del chat
+              final mainAppState = context.findAncestorStateOfType<_MainAppPageState>();
+              mainAppState?.restoreConversationsTab();
+            });
           },
-          child: Padding(
+          child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
@@ -700,37 +1303,49 @@ class _InstagramConversationTile extends StatelessWidget {
                       width: 50,
                       height: 50,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: isActive 
-                              ? [const Color(0xFF3B82F6), const Color(0xFF1E40AF)]
-                              : [const Color(0xFF6B7280), const Color(0xFF4B5563)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: _getEmotionColor(
+                          conversation.conversation.userCurrentEmotion,
+                        ).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(25),
-                      ),
-                      child: Center(
-                        child: Text(
-                          _getEmotionEmoji(conversation.conversation.userCurrentEmotion),
-                          style: const TextStyle(
-                            fontSize: 20,
+                        border: Border.all(
+                          color: AppConstants.textTertiary.withValues(alpha: 0.2),
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _getEmotionColor(
+                              conversation.conversation.userCurrentEmotion,
+                            ).withValues(alpha: 0.2),
+                            blurRadius: 12,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 2),
                           ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          _getEmotionImagePath(
+                            conversation.conversation.userCurrentEmotion,
+                          ),
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
                         ),
                       ),
                     ),
                     // Indicador de estado en línea
                     if (isActive)
                       Positioned(
-                        bottom: 2,
-                        right: 2,
+                        bottom: 0,
+                        right: 0,
                         child: Container(
-                          width: 14,
-                          height: 14,
+                          width: 16,
+                          height: 16,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF10B981),
-                            borderRadius: BorderRadius.circular(7),
+                            color: AppConstants.secondaryColor, // Verde menta
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: const Color(0xFF1A1A1A),
+                              color: AppConstants.primaryVariant, // Morado oscuro
                               width: 2,
                             ),
                           ),
@@ -749,19 +1364,22 @@ class _InstagramConversationTile extends StatelessWidget {
                           Expanded(
                             child: Text(
                               username,
-                              style: const TextStyle(
-                                color: Color(0xFFE5E7EB),
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
+                              style: GoogleFonts.poppins(
+                                color: AppConstants.textPrimary,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.2,
                               ),
                             ),
                           ),
                           if (timestamp != null)
                             Text(
                               _formatTimestamp(timestamp),
-                              style: const TextStyle(
-                                color: Color(0xFF6B7280),
-                                fontSize: 13,
+                              style: GoogleFonts.poppins(
+                                color: AppConstants.textTertiary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w400,
+                                letterSpacing: 0.1,
                               ),
                             ),
                         ],
@@ -774,14 +1392,15 @@ class _InstagramConversationTile extends StatelessWidget {
                               lastMessage,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: unreadCount > 0 
-                                    ? const Color(0xFFE5E7EB)
-                                    : const Color(0xFF9CA3AF),
+                              style: GoogleFonts.manrope(
+                                color: unreadCount > 0
+                                    ? AppConstants.textPrimary
+                                    : AppConstants.textSecondary,
                                 fontSize: 14,
-                                fontWeight: unreadCount > 0 
-                                    ? FontWeight.w500 
-                                    : FontWeight.normal,
+                                fontWeight: unreadCount > 0
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                height: 1.3,
                               ),
                             ),
                           ),
@@ -790,15 +1409,19 @@ class _InstagramConversationTile extends StatelessWidget {
                             Container(
                               constraints: const BoxConstraints(minWidth: 20),
                               height: 20,
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF3B82F6),
+                                color: AppConstants.primaryColor, // Púrpura Magneto
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Center(
                                 child: Text(
-                                  unreadCount > 99 ? '99+' : unreadCount.toString(),
-                                  style: const TextStyle(
+                                  unreadCount > 99
+                                      ? '99+'
+                                      : unreadCount.toString(),
+                                  style: GoogleFonts.manrope(
                                     color: Colors.white,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -835,29 +1458,65 @@ class _InstagramConversationTile extends StatelessWidget {
     }
   }
 
-  String _getEmotionEmoji(String? emotion) {
+  Color _getEmotionColor(String? emotion) {
     switch (emotion?.toLowerCase()) {
       case 'happy':
-      case 'feliz':
-        return '😊';
-      case 'sad':
-      case 'triste':
-        return '😢';
-      case 'angry':
-      case 'enojado':
-        return '😠';
+        return AppConstants.secondaryColor; // Verde menta
       case 'excited':
-      case 'emocionado':
-        return '🤩';
+        return AppConstants.primaryColor; // Púrpura Magneto
+      case 'hopeful':
+        return AppConstants.secondaryColor; // Verde menta
+      case 'grateful':
+        return AppConstants.primaryColor; // Púrpura Magneto
       case 'calm':
-      case 'tranquilo':
-        return '😌';
+        return AppConstants.primaryVariant; // Morado oscuro
+      case 'sad':
+        return AppConstants.textTertiary; // Gris claro
+      case 'angry':
+        return AppConstants.errorColor; // Rojo para enojo
+      case 'stressed':
+        return AppConstants.warningColor; // Amarillo/naranja para estrés
+      case 'disappointed':
+        return AppConstants.primaryVariant; // Morado oscuro
       case 'confused':
-      case 'confundido':
-        return '😕';
+        return AppConstants.textTertiary; // Gris claro
+      case 'curious':
+        return AppConstants.secondaryColor; // Verde menta
+      case 'neutral':
+        return AppConstants.primaryVariant; // Morado oscuro
       default:
-        return '😐';
+        return AppConstants.primaryVariant; // Morado oscuro por defecto
     }
   }
 
+  String _getEmotionImagePath(String? emotion) {
+    switch (emotion?.toLowerCase()) {
+      case 'happy':
+        return 'assets/images/emotions/happy.png';
+      case 'excited':
+        return 'assets/images/emotions/excited.png';
+      case 'hopeful':
+        return 'assets/images/emotions/hopeful.png';
+      case 'grateful':
+        return 'assets/images/emotions/grateful.png';
+      case 'calm':
+        return 'assets/images/emotions/calm.png';
+      case 'sad':
+        return 'assets/images/emotions/sad.png';
+      case 'angry':
+        return 'assets/images/emotions/angry.png';
+      case 'stressed':
+        return 'assets/images/emotions/stressed.png';
+      case 'disappointed':
+        return 'assets/images/emotions/disappointed.png';
+      case 'confused':
+        return 'assets/images/emotions/confused.png';
+      case 'curious':
+        return 'assets/images/emotions/curious.png';
+      case 'neutral':
+        return 'assets/images/emotions/neutral.png';
+      default:
+        return 'assets/images/emotions/neutral.png';
+    }
+  }
 }

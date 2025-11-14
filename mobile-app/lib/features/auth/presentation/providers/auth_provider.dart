@@ -27,6 +27,19 @@ final currentUserProvider = FutureProvider<UserEntity?>((ref) async {
     final repository = ref.read(authRepositoryProvider);
     return await repository.getCurrentUser();
   } catch (e) {
+    final errorString = e.toString().toLowerCase();
+    
+    // NO invalidar providers automáticamente, incluso si hay errores de oauth_client_id
+    // Estos errores pueden ser temporales y no deberían causar cierre de sesión
+    // Solo loguear el error y retornar null
+    if (errorString.contains('oauth_client_id') || 
+        errorString.contains('missing destination name') ||
+        errorString.contains('authretryablefetchexception')) {
+      print('⚠️ Error de autenticación detectado en currentUserProvider (no crítico): $e');
+      // NO invalidar providers, solo retornar null
+      return null;
+    }
+    
     print('Error al obtener usuario actual: $e');
     return null;
   }

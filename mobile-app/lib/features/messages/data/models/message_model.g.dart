@@ -9,7 +9,8 @@ part of 'message_model.dart';
 _$MessageModelImpl _$$MessageModelImplFromJson(Map<String, dynamic> json) =>
     _$MessageModelImpl(
       message: json['message'] as String,
-      recipientId: json['recipientId'] as String,
+      recipientId: json['recipientId'] as String?,
+      conversationId: json['conversationId'] as String?,
       senderName: json['senderName'] as String?,
     );
 
@@ -17,6 +18,7 @@ Map<String, dynamic> _$$MessageModelImplToJson(_$MessageModelImpl instance) =>
     <String, dynamic>{
       'message': instance.message,
       'recipientId': instance.recipientId,
+      'conversationId': instance.conversationId,
       'senderName': instance.senderName,
     };
 

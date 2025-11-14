@@ -192,4 +192,78 @@ class InstagramApiService {
       throw Exception('Error al buscar posts: $e');
     }
   }
+
+  /// Obtener estadísticas de likes (conteo de esta semana)
+  Future<int> getWeeklyLikesCount() async {
+    try {
+      final response = await _dio.get(
+        '${ApiConfig.baseUrl}/instagram/likes/stats',
+        options: Options(
+          headers: ApiConfig.defaultHeaders,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data['data'] as Map<String, dynamic>?;
+        return data?['weeklyCount'] as int? ?? 0;
+      } else {
+        throw Exception('Error HTTP: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error al obtener conteo de likes semanales: $e');
+      return 0; // Retornar 0 en caso de error
+    }
+  }
+
+  /// Obtener resumen de likes (suma total de todos los posts)
+  Future<int> getLikesSummary() async {
+    try {
+      final response = await _dio.get(
+        '${ApiConfig.baseUrl}/instagram/likes-summary',
+        options: Options(
+          headers: ApiConfig.defaultHeaders,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data['data'] as Map<String, dynamic>?;
+        return data?['totalLikes'] as int? ?? 0;
+      } else {
+        throw Exception('Error HTTP: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error al obtener resumen de likes: $e');
+      return 0; // Retornar 0 en caso de error
+    }
+  }
+
+  /// Obtener conteo de likes por múltiples posts
+  Future<Map<String, int>> getLikesCountByPosts(List<String> postIds) async {
+    try {
+      if (postIds.isEmpty) {
+        return {};
+      }
+
+      final response = await _dio.post(
+        '${ApiConfig.baseUrl}/instagram/likes/by-posts',
+        data: {'postIds': postIds},
+        options: Options(
+          headers: ApiConfig.defaultHeaders,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data['data'] as Map<String, dynamic>?;
+        if (data != null) {
+          return data.map((key, value) => MapEntry(key, (value as num).toInt()));
+        }
+        return {};
+      } else {
+        throw Exception('Error HTTP: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error al obtener conteo de likes por posts: $e');
+      return {}; // Retornar mapa vacío en caso de error
+    }
+  }
 }

@@ -1,10 +1,104 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/constants/app_constants.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
+  // Construir TextTheme con Poppins para titulares y Manrope para cuerpo
+  static TextTheme _buildTextTheme() {
+    // Poppins para titulares, subtítulos y resaltados
+    final poppinsHeadings = GoogleFonts.poppins();
+    // Manrope para bloques de texto y entradillas
+    final manropeBody = GoogleFonts.manrope();
+    
+    return TextTheme(
+      // Display - Poppins Bold
+      displayLarge: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 32,
+        fontWeight: FontWeight.bold,
+      ),
+      displayMedium: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 28,
+        fontWeight: FontWeight.bold,
+      ),
+      displaySmall: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+      ),
+      // Headlines - Poppins Semibold
+      headlineLarge: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+      ),
+      headlineMedium: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+      ),
+      headlineSmall: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+      ),
+      // Titles - Poppins Semibold/Medium
+      titleLarge: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+      titleMedium: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
+      titleSmall: poppinsHeadings.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+      // Body - Manrope Regular para bloques de texto
+      bodyLarge: manropeBody.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 16,
+        fontWeight: FontWeight.normal,
+      ),
+      bodyMedium: manropeBody.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.normal,
+      ),
+      bodySmall: manropeBody.copyWith(
+        color: AppConstants.textSecondary,
+        fontSize: 12,
+        fontWeight: FontWeight.normal,
+      ),
+      // Labels - Manrope Medium
+      labelLarge: manropeBody.copyWith(
+        color: AppConstants.textPrimary,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
+      labelMedium: manropeBody.copyWith(
+        color: AppConstants.textSecondary,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+      labelSmall: manropeBody.copyWith(
+        color: AppConstants.textTertiary,
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+  }
+  
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
+      primaryColor: AppConstants.primaryColor,
       // Removemos fontFamily para usar fuentes del sistema
       colorScheme: const ColorScheme.light(
         primary: AppConstants.primaryColor,
@@ -66,7 +160,25 @@ class AppTheme {
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
+        ).copyWith(
+          // Hover states para web
+          mouseCursor: kIsWeb ? MaterialStateProperty.all(MaterialStateMouseCursor.clickable) : null,
         ),
+      ),
+
+      // FAB Theme
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppConstants.primaryColor,
+        foregroundColor: Colors.white,
+      ),
+
+      // Bottom Navigation
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppConstants.surfaceColor,
+        selectedItemColor: AppConstants.primaryColor,
+        unselectedItemColor: AppConstants.textTertiary,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
       ),
       
       // Outlined Button Theme
@@ -146,84 +258,8 @@ class AppTheme {
         ),
       ),
       
-      // Text Theme
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-        ),
-        displayMedium: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 28,
-          fontWeight: FontWeight.bold,
-        ),
-        displaySmall: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-        ),
-        headlineLarge: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
-        ),
-        headlineMedium: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-        ),
-        headlineSmall: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-        ),
-        titleLarge: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
-        titleMedium: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
-        titleSmall: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-        bodyLarge: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.normal,
-        ),
-        bodyMedium: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 14,
-          fontWeight: FontWeight.normal,
-        ),
-        bodySmall: TextStyle(
-          color: AppConstants.textSecondary,
-          fontSize: 12,
-          fontWeight: FontWeight.normal,
-        ),
-        labelLarge: TextStyle(
-          color: AppConstants.textPrimary,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
-        labelMedium: TextStyle(
-          color: AppConstants.textSecondary,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-        labelSmall: TextStyle(
-          color: AppConstants.textTertiary,
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
+      // Text Theme - Poppins para titulares y Manrope para bloques de texto
+      textTheme: _buildTextTheme(),
       
       // Icon Theme
       iconTheme: const IconThemeData(
@@ -248,6 +284,7 @@ class AppTheme {
       useMaterial3: true,
       // Removemos fontFamily para usar fuentes del sistema
       brightness: Brightness.dark,
+      primaryColor: AppConstants.primaryColor,
       colorScheme: const ColorScheme.dark(
         primary: AppConstants.primaryColor,
         primaryContainer: AppConstants.primaryVariant,
@@ -261,6 +298,19 @@ class AppTheme {
         onSurface: Colors.white,
         onBackground: Colors.white,
         onError: Colors.white,
+      ),
+
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppConstants.primaryColor,
+        foregroundColor: Colors.white,
+      ),
+
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: Color(0xFF111827),
+        selectedItemColor: AppConstants.primaryColor,
+        unselectedItemColor: AppConstants.textTertiary,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
       ),
       
       // Aplicar el mismo estilo que el tema claro pero con colores oscuros

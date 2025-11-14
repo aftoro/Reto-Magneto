@@ -18,15 +18,15 @@ class InsightsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingL),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white, // Fondo blanco para light mode
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: const Color(0xFFE5E7EB), // Borde gris claro
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withOpacity(0.05), // Sombra suave para light mode
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -39,14 +39,14 @@ class InsightsCard extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                color: const Color(0xFFF59E0B),
+                color: AppConstants.warningColor, // Amarillo/naranja
                 size: 24,
               ),
               const SizedBox(width: AppConstants.spacingS),
               Text(
                 title,
                 style: const TextStyle(
-                  color: Color(0xFFE5E7EB),
+                  color: AppConstants.textPrimary, // Texto negro para light mode
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -64,7 +64,7 @@ class InsightsCard extends StatelessWidget {
                   height: 6,
                   margin: const EdgeInsets.only(top: 6),
                   decoration: const BoxDecoration(
-                    color: Color(0xFFF59E0B),
+                    color: AppConstants.warningColor, // Amarillo/naranja
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -73,7 +73,7 @@ class InsightsCard extends StatelessWidget {
                   child: Text(
                     insight,
                     style: const TextStyle(
-                      color: Color(0xFFE5E7EB),
+                      color: AppConstants.textPrimary, // Texto negro para light mode
                       fontSize: 14,
                       height: 1.4,
                     ),

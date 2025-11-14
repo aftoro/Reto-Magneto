@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/app_strings.dart';
+import '../../../../core/utils/responsive.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/gradient_button.dart';
 import '../providers/auth_provider.dart';
 import '../../../../shared/widgets/success_animation.dart';
+import '../../../../shared/widgets/responsive/responsive_container.dart';
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key});
@@ -137,102 +140,120 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
   Widget build(BuildContext context) {
     final authState = ref.watch(signUpProvider);
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Container(
+    final stackChildren = <Widget>[
+      Container(
             decoration: const BoxDecoration(
               gradient: AppConstants.brandGradient,
             ),
             child: SafeArea(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(AppConstants.spacingL),
-                child: AnimatedBuilder(
-                  animation: _animationController,
-                  builder: (context, child) {
-                    return Transform.translate(
-                      offset: Offset(0, _slideAnimation.value),
-                      child: FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: Column(
-                          children: [
-                            const SizedBox(height: AppConstants.spacingL),
-                            
-                            // Botón de regreso
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: IconButton(
-                                onPressed: _navigateToLogin,
-                                icon: Container(
-                                  padding: const EdgeInsets.all(AppConstants.spacingS),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(AppConstants.radiusM),
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_back_ios,
-                                    color: Colors.white,
-                                    size: 20,
+                child: CenteredResponsiveContainer(
+                  maxWidth: context.isDesktop ? 500 : (context.isTablet ? 450 : double.infinity),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: context.isMobile ? AppConstants.spacingL : AppConstants.spacingXL,
+                    vertical: context.isMobile ? AppConstants.spacingL : AppConstants.spacingXXL,
+                  ),
+                  child: AnimatedBuilder(
+                    animation: _animationController,
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(0, _slideAnimation.value),
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(height: context.isMobile ? AppConstants.spacingL : AppConstants.spacingXL),
+                              
+                              // Botón de regreso
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: IconButton(
+                                  onPressed: _navigateToLogin,
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(AppConstants.spacingS),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(AppConstants.radiusM),
+                                    ),
+                                    child: Icon(
+                                      Icons.arrow_back_ios,
+                                      color: Colors.white,
+                                      size: context.isMobile ? 20 : 24,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            
-                            const SizedBox(height: AppConstants.spacingL),
-                            
-                            // Logo y título
-                            Container(
-                              width: 100,
-                              height: 100,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(
-                                  AppConstants.radiusXL,
+                              
+                              SizedBox(height: AppConstants.spacingL),
+                              
+                              // Logo y título
+                              Container(
+                                width: context.isMobile ? 100 : 120,
+                                height: context.isMobile ? 100 : 120,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(
+                                    AppConstants.radiusXL,
+                                  ),
+                                  boxShadow: AppConstants.elevatedShadow,
                                 ),
-                                boxShadow: AppConstants.elevatedShadow,
+                                child: Icon(
+                                  Icons.person_add_outlined,
+                                  size: context.isMobile ? 60 : 70,
+                                  color: AppConstants.primaryColor,
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.person_add_outlined,
-                                size: 60,
-                                color: AppConstants.primaryColor,
+                              
+                              SizedBox(height: AppConstants.spacingL),
+                              
+                              Text(
+                                AppStrings.registerTitle,
+                                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: Responsive.getAdaptiveFontSize(
+                                    context,
+                                    mobile: 28,
+                                    tablet: 32,
+                                    desktop: 36,
+                                  ),
+                                ),
+                                textAlign: TextAlign.center,
                               ),
-                            ),
-                            
-                            const SizedBox(height: AppConstants.spacingL),
-                            
-                            Text(
-                              'Crear cuenta',
-                              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                              
+                              const SizedBox(height: AppConstants.spacingM),
+                              
+                              Text(
+                                AppStrings.registerSubtitle,
+                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: Responsive.getAdaptiveFontSize(
+                                    context,
+                                    mobile: 16,
+                                    tablet: 18,
+                                    desktop: 18,
+                                  ),
+                                ),
+                                textAlign: TextAlign.center,
                               ),
-                              textAlign: TextAlign.center,
-                            ),
-                            
-                            const SizedBox(height: AppConstants.spacingM),
-                            
-                            Text(
-                              'Únete a nuestra comunidad',
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            
-                            const SizedBox(height: AppConstants.spacingXXL),
-                            
-                            // Formulario
-                            Container(
-                              padding: const EdgeInsets.all(AppConstants.spacingL),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(AppConstants.radiusL),
-                                boxShadow: AppConstants.elevatedShadow,
-                              ),
-                              child: Form(
-                                key: _formKey,
-                                child: Column(
-                                  children: [
+                              
+                              SizedBox(height: context.isMobile ? AppConstants.spacingXXL : AppConstants.spacingXL),
+                              
+                              // Formulario
+                              Container(
+                                padding: EdgeInsets.all(
+                                  context.isMobile ? AppConstants.spacingL : AppConstants.spacingXL,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(AppConstants.radiusL),
+                                  boxShadow: AppConstants.elevatedShadow,
+                                ),
+                                child: Form(
+                                  key: _formKey,
+                                  child: Column(
+                                    children: [
                                     // Mostrar error si existe
                                     if (authState.error != null)
                                       Container(
@@ -394,7 +415,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
                                               )
                                             : Text(
                                                 _isFormValid() 
-                                                    ? 'Crear cuenta' 
+                                                    ? AppStrings.registerTitle 
                                                     : 'Completa el formulario',
                                                 style: const TextStyle(
                                                   fontSize: 16,
@@ -480,16 +501,25 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
               ),
             ),
           ),
-          
-          // Animación de éxito
-          if (_showSuccessAnimation)
-            SuccessAnimation(
-              title: '¡Cuenta creada exitosamente! 🎉',
-              message: 'Bienvenido ${_fullNameController.text.trim().split(' ').first}, tu cuenta ha sido creada. Ahora puedes iniciar sesión.',
-              onAnimationComplete: _onSuccessAnimationComplete,
-              duration: const Duration(seconds: 3),
-            ),
-        ],
+        ),
+    ];
+
+    if (_showSuccessAnimation) {
+      stackChildren.add(
+        Positioned.fill(
+          child: SuccessAnimation(
+            title: '¡Cuenta creada exitosamente! 🎉',
+            message: 'Bienvenido ${_fullNameController.text.trim().split(' ').first}, tu cuenta ha sido creada. Ahora puedes iniciar sesión.',
+            onAnimationComplete: _onSuccessAnimationComplete,
+            duration: const Duration(seconds: 3),
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      body: Stack(
+        children: stackChildren,
       ),
     );
   }

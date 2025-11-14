@@ -28,7 +28,27 @@ class _ConversationsPageState extends ConsumerState<ConversationsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Conversaciones'),
+        title: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.white.withOpacity(0.1),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Image.asset(
+                  'assets/images/logo_m.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Conversaciones'),
+          ],
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         flexibleSpace: Container(
@@ -228,20 +248,26 @@ class _StatsCard extends StatelessWidget {
   }
 }
 
-class _ConversationsList extends StatelessWidget {
+class _ConversationsList extends ConsumerWidget {
   final List<ConversationWithMessages> conversations;
 
   const _ConversationsList({required this.conversations});
 
   @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
+  Widget build(BuildContext context, WidgetRef ref) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        await ref.read(conversationNotifierProvider.notifier).refreshConversations();
+      },
+      color: AppConstants.primaryColor,
+      child: ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: AppConstants.spacingL),
       itemCount: conversations.length,
       itemBuilder: (context, index) {
         final conversation = conversations[index];
         return _ConversationTile(conversation: conversation);
       },
+      ),
     );
   }
 }

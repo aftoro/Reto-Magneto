@@ -167,7 +167,20 @@ enum PreviewType {
 enum PreviewStyle {
   modern('modern', 'Moderno y Profesional'),
   dynamic('dynamic', 'Dinámico y Atractivo'),
-  minimalist('minimalist', 'Minimalista');
+  minimalist('minimalist', 'Minimalista'),
+  corporate('corporate', 'Corporativo'),
+  realistic('realistic', 'Realista'),
+  cartoonish('cartoonish', 'Caricaturesco'),
+  illustrative('illustrative', 'Ilustrativo'),
+  elegant('elegant', 'Elegante'),
+  tech('tech', 'Tech'),
+  vibrant('vibrant', 'Vibrante'),
+  professional('professional', 'Profesional'),
+  creative('creative', 'Creativo'),
+  bold('bold', 'Audaz'),
+  soft('soft', 'Suave'),
+  geometric('geometric', 'Geométrico'),
+  abstract('abstract', 'Abstracto');
 
   const PreviewStyle(this.value, this.label);
   final String value;

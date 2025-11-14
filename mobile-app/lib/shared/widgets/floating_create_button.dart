@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class FloatingCreateButton extends StatefulWidget {
   final Function(String) onItemSelected;
@@ -91,9 +93,9 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
                 child: Opacity(
                   opacity: _postButtonAnimation?.value ?? 0.0,
                   child: _buildFloatingMenuItem(
-                    icon: Icons.add_photo_alternate,
+                    iconPath: 'assets/icons/media.svg',
                     tooltip: 'Crear Post',
-                    color: const Color(0xFF3B82F6),
+                    color: const Color(0xFF5B1DF4),
                     onTap: () => _selectItem('post'),
                   ),
                 ),
@@ -109,9 +111,9 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
                 child: Opacity(
                   opacity: _storyButtonAnimation?.value ?? 0.0,
                   child: _buildFloatingMenuItem(
-                    icon: Icons.auto_stories,
+                    iconPath: 'assets/icons/storie.svg',
                     tooltip: 'Crear Story',
-                    color: const Color(0xFF8B5CF6),
+                    color: const Color(0xFF10B981),
                     onTap: () => _selectItem('story'),
                   ),
                 ),
@@ -127,9 +129,9 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
                 child: Opacity(
                   opacity: _reelButtonAnimation?.value ?? 0.0,
                   child: _buildFloatingMenuItem(
-                    icon: Icons.video_library,
+                    iconPath: 'assets/icons/reel.svg',
                     tooltip: 'Crear Reel',
-                    color: const Color(0xFF8B5CF6),
+                    color: const Color(0xFFF59E0B),
                     onTap: () => _selectItem('reel'),
                   ),
                 ),
@@ -147,16 +149,21 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
             height: 64,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
+                colors: [Color(0xFF5B1DF4), Color(0xFF8B5CF6)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(16), // Bordes redondos estilo Cupertino
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF3B82F6).withOpacity(0.4),
+                  color: const Color(0xFF5B1DF4).withOpacity(0.4),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: const Color(0xFF10B981).withOpacity(0.2),
+                  blurRadius: 15,
+                  offset: const Offset(0, 4),
                 ),
                 BoxShadow(
                   color: Colors.black.withOpacity(0.2),
@@ -166,7 +173,7 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
               ],
             ),
             child: Icon(
-              _isExpanded ? Icons.close : Icons.add,
+              _isExpanded ? CupertinoIcons.xmark : CupertinoIcons.add,
               color: Colors.white,
               size: 28,
             ),
@@ -177,7 +184,8 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
   }
 
   Widget _buildFloatingMenuItem({
-    required IconData icon,
+    String? iconPath,
+    IconData? icon,
     required String tooltip,
     required Color color,
     required VoidCallback onTap,
@@ -185,35 +193,43 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
     return Tooltip(
       message: tooltip,
       decoration: BoxDecoration(
-        color: const Color(0xFF1F1F1F),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: const Color(0xFF2D2D2D),
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       textStyle: const TextStyle(
         color: Color(0xFFE5E7EB),
         fontSize: 12,
+        fontWeight: FontWeight.w500,
       ),
       preferBelow: false,
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 56,
-          height: 56,
+          width: 52,
+          height: 52,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [color, color.withOpacity(0.8)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(26),
             boxShadow: [
               BoxShadow(
-                color: color.withOpacity(0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: color.withOpacity(0.4),
+                blurRadius: 15,
+                offset: const Offset(0, 6),
               ),
               BoxShadow(
                 color: Colors.black.withOpacity(0.2),
@@ -222,10 +238,22 @@ class _FloatingCreateButtonState extends State<FloatingCreateButton>
               ),
             ],
           ),
-          child: Icon(
-            icon,
-            color: Colors.white,
-            size: 24,
+          child: Center(
+            child: iconPath != null
+                ? SvgPicture.asset(
+                    iconPath,
+                    width: 18,
+                    height: 18,
+                    colorFilter: const ColorFilter.mode(
+                      Colors.white,
+                      BlendMode.srcIn,
+                    ),
+                  )
+                : Icon(
+                    icon ?? CupertinoIcons.add,
+                    color: Colors.white,
+                    size: 18,
+                  ),
           ),
         ),
       ),

@@ -79,9 +79,27 @@ class ConversationNotifier extends StateNotifier<ConversationState> {
     }
   }
 
-  /// Refrescar conversaciones
+  /// Refrescar conversaciones (mantiene el estado actual mientras refresca)
   Future<void> refreshConversations() async {
-    await loadConversations();
+    try {
+      final response = await _chatApiService.getChats(
+        page: 1,
+        limit: 20,
+        search: null,
+      );
+      
+      final stats = _calculateStats(response.chats);
+      state = ConversationState.loaded(
+        conversations: response.chats,
+        stats: stats,
+      );
+    } catch (e) {
+      // Si hay error, mantener el estado anterior en lugar de mostrar error
+      // para que el usuario pueda seguir viendo las conversaciones
+      print('⚠️ Error al refrescar conversaciones: $e');
+      // El estado se mantiene igual, no cambiamos a error para no ocultar la lista
+      rethrow; // Re-lanzar para que RefreshIndicator muestre el error visualmente
+    }
   }
 
   /// Manejar nuevo mensaje

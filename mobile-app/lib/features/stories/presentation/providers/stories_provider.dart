@@ -24,10 +24,29 @@ class StoriesState with _$StoriesState {
 
 class StoriesNotifier extends StateNotifier<StoriesState> {
   final StoriesApiService _apiService;
+  bool _hasLoadedOnce = false;
 
   StoriesNotifier(this._apiService) : super(const StoriesState.initial());
 
-  /// Cargar stories
+  /// Cargar stories solo si no se han cargado antes
+  Future<void> loadStoriesIfNeeded({
+    int limit = 20,
+    int offset = 0,
+    String status = 'created',
+  }) async {
+    // Si ya se cargaron los datos una vez, no volver a cargar automáticamente
+    if (_hasLoadedOnce && state is! _Loading) {
+      return;
+    }
+    
+    await loadStories(
+      limit: limit,
+      offset: offset,
+      status: status,
+    );
+  }
+
+  /// Cargar stories (forzar carga)
   Future<void> loadStories({
     int limit = 20,
     int offset = 0,
@@ -49,6 +68,7 @@ class StoriesNotifier extends StateNotifier<StoriesState> {
           limit: limit,
           offset: offset,
         );
+        _hasLoadedOnce = true;
         return;
       }
       
@@ -58,6 +78,7 @@ class StoriesNotifier extends StateNotifier<StoriesState> {
         limit: response.limit,
         offset: response.offset,
       );
+      _hasLoadedOnce = true;
     } catch (e) {
       // Si es un error de conexión o 404, mostrar stories vacías en lugar de error
       if (e.toString().contains('404') || 
@@ -69,18 +90,20 @@ class StoriesNotifier extends StateNotifier<StoriesState> {
           limit: limit,
           offset: offset,
         );
+        _hasLoadedOnce = true;
       } else {
         state = StoriesState.error(message: e.toString());
       }
     }
   }
 
-  /// Refrescar stories
+  /// Refrescar stories (forzar recarga)
   Future<void> refreshStories({
     int limit = 20,
     int offset = 0,
     String status = 'created',
   }) async {
+    _hasLoadedOnce = false; // Reset flag to allow reload
     await loadStories(
       limit: limit,
       offset: offset,

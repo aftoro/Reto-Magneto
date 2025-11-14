@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../data/models/analytics_entity.dart';
 
@@ -15,28 +17,39 @@ class ConversationsStatsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppConstants.spacingL),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: Colors.white, // Fondo blanco para light mode
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF2D2D2D),
+          color: const Color(0xFFE5E7EB), // Borde gris claro
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05), // Sombra suave para light mode
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.chat_bubble_outline,
-                color: Color(0xFF8B5CF6),
-                size: 24,
+              SvgPicture.asset(
+                'assets/icons/chat.svg',
+                width: 24,
+                height: 24,
+                colorFilter: const ColorFilter.mode(
+                  Color(0xFF8B5CF6),
+                  BlendMode.srcIn,
+                ),
               ),
               const SizedBox(width: AppConstants.spacingS),
               const Text(
                 'Estadísticas de Conversaciones',
                 style: TextStyle(
-                  color: Color(0xFFE5E7EB),
+                  color: AppConstants.textPrimary, // Texto negro para light mode
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -52,7 +65,7 @@ class ConversationsStatsCard extends StatelessWidget {
                 child: _buildStatItem(
                   'Total',
                   analytics.conversations.summary.totalConversations.toString(),
-                  Icons.chat,
+                  'assets/icons/chat.svg',
                   const Color(0xFF8B5CF6),
                 ),
               ),
@@ -60,7 +73,7 @@ class ConversationsStatsCard extends StatelessWidget {
                 child: _buildStatItem(
                   'Activas',
                   analytics.conversations.summary.activeConversations.toString(),
-                  Icons.chat_bubble,
+                  'assets/icons/chat.svg',
                   const Color(0xFF10B981),
                 ),
               ),
@@ -68,7 +81,7 @@ class ConversationsStatsCard extends StatelessWidget {
                 child: _buildStatItem(
                   'Completitud',
                   '${analytics.conversations.summary.avgCompletion.toStringAsFixed(1)}%',
-                  Icons.check_circle,
+                  CupertinoIcons.check_mark_circled_solid,
                   const Color(0xFF3B82F6),
                 ),
               ),
@@ -91,14 +104,24 @@ class ConversationsStatsCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
+  Widget _buildStatItem(String label, String value, dynamic icon, Color color) {
     return Column(
       children: [
-        Icon(
-          icon,
-          color: color,
-          size: 24,
-        ),
+        icon is String
+            ? SvgPicture.asset(
+                icon,
+                width: 24,
+                height: 24,
+                colorFilter: ColorFilter.mode(
+                  color,
+                  BlendMode.srcIn,
+                ),
+              )
+            : Icon(
+                icon as IconData,
+                color: color,
+                size: 24,
+              ),
         const SizedBox(height: AppConstants.spacingS),
         Text(
           value,
@@ -112,7 +135,7 @@ class ConversationsStatsCard extends StatelessWidget {
         Text(
           label,
           style: const TextStyle(
-            color: Color(0xFF9CA3AF),
+            color: AppConstants.textSecondary, // Gris medio para light mode
             fontSize: 12,
             fontWeight: FontWeight.w500,
           ),
@@ -128,7 +151,7 @@ class ConversationsStatsCard extends StatelessWidget {
         const Text(
           'Profesiones Más Activas',
           style: TextStyle(
-            color: Color(0xFFE5E7EB),
+            color: AppConstants.textPrimary, // Texto negro para light mode
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -152,7 +175,7 @@ class ConversationsStatsCard extends StatelessWidget {
                   child: Text(
                     profession.profession,
                     style: const TextStyle(
-                      color: Color(0xFFE5E7EB),
+                      color: AppConstants.textPrimary, // Texto negro para light mode
                       fontSize: 14,
                     ),
                   ),
@@ -160,7 +183,7 @@ class ConversationsStatsCard extends StatelessWidget {
                 Text(
                   '${profession.count}',
                   style: const TextStyle(
-                    color: Color(0xFF9CA3AF),
+                    color: AppConstants.textSecondary, // Gris medio para light mode
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -180,7 +203,7 @@ class ConversationsStatsCard extends StatelessWidget {
         const Text(
           'Ubicaciones Más Activas',
           style: TextStyle(
-            color: Color(0xFFE5E7EB),
+            color: AppConstants.textPrimary, // Texto negro para light mode
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -204,7 +227,7 @@ class ConversationsStatsCard extends StatelessWidget {
                   child: Text(
                     location.location,
                     style: const TextStyle(
-                      color: Color(0xFFE5E7EB),
+                      color: AppConstants.textPrimary, // Texto negro para light mode
                       fontSize: 14,
                     ),
                   ),
@@ -212,7 +235,7 @@ class ConversationsStatsCard extends StatelessWidget {
                 Text(
                   '${location.count}',
                   style: const TextStyle(
-                    color: Color(0xFF9CA3AF),
+                    color: AppConstants.textSecondary, // Gris medio para light mode
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -232,7 +255,7 @@ class ConversationsStatsCard extends StatelessWidget {
         const Text(
           'Distribución por Experiencia',
           style: TextStyle(
-            color: Color(0xFFE5E7EB),
+            color: AppConstants.textPrimary, // Texto negro para light mode
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -256,7 +279,7 @@ class ConversationsStatsCard extends StatelessWidget {
                   child: Text(
                     exp.level,
                     style: const TextStyle(
-                      color: Color(0xFFE5E7EB),
+                      color: AppConstants.textPrimary, // Texto negro para light mode
                       fontSize: 14,
                     ),
                   ),
@@ -264,7 +287,7 @@ class ConversationsStatsCard extends StatelessWidget {
                 Text(
                   '${exp.count}',
                   style: const TextStyle(
-                    color: Color(0xFF9CA3AF),
+                    color: AppConstants.textSecondary, // Gris medio para light mode
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),

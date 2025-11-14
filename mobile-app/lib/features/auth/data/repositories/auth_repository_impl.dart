@@ -1,4 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:dio/dio.dart';
+import '../../../../core/config/api_config.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../models/user_model.dart';
@@ -95,8 +97,32 @@ class AuthRepositoryImpl implements AuthRepository {
 
       return userEntity;
     } on AuthException catch (e) {
+      // Manejar errores específicos de autenticación
+      final errorMessage = e.message.toLowerCase();
+      
+      // Solo cerrar sesión si es un error de sesión inválida, NO durante el login normal
+      // Los errores durante signIn normalmente son de credenciales incorrectas
+      if (errorMessage.contains('oauth_client_id') || 
+          errorMessage.contains('missing destination name')) {
+        // Este error solo debería ocurrir durante refresh, no durante signIn
+        // Si ocurre durante signIn, probablemente es un problema del servidor, no de la sesión
+        print('⚠️ Error de autenticación detectado en signIn: ${e.message}');
+        // NO cerrar sesión aquí, solo lanzar el error
+      }
+      
       throw Exception(_getErrorMessage(e.message));
     } catch (e) {
+      // Durante signIn, los errores de refresh token no deberían ocurrir
+      // Si ocurren, es probablemente un problema temporal del servidor
+      final errorString = e.toString().toLowerCase();
+      if (errorString.contains('oauth_client_id') || 
+          errorString.contains('missing destination name') ||
+          errorString.contains('authretryablefetchexception')) {
+        print('⚠️ Error inesperado durante signIn: $e');
+        // NO cerrar sesión aquí, solo lanzar el error
+        throw Exception('Error de conexión con el servidor. Por favor, intenta nuevamente.');
+      }
+      
       throw Exception('Error inesperado: $e');
     }
   }
@@ -113,28 +139,82 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<UserEntity?> getCurrentUser() async {
     try {
+      // Primero verificar que haya una sesión de Supabase
+      final session = _supabaseClient.auth.currentSession;
+      if (session == null) {
+        print('⚠️ getCurrentUser: No hay sesión de Supabase');
+        return null;
+      }
+
       final user = _supabaseClient.auth.currentUser;
-      if (user == null) return null;
+      if (user == null) {
+        print('⚠️ getCurrentUser: No hay usuario en la sesión');
+        return null;
+      }
 
-      // Intentar obtener perfil del usuario
+      print('🔍 getCurrentUser: Intentando obtener perfil del backend...');
+      
+      // Intentar obtener perfil del backend primero
       try {
-        final profileData = await _supabaseClient
-            .from('profiles')
-            .select()
-            .eq('id', user.id)
-            .single();
-
-        return UserModel.fromJson(profileData).toEntity();
-      } catch (e) {
-        // Si no hay perfil, retornar usuario básico
-        return UserEntity(
-          id: user.id,
-          email: user.email ?? '',
-          fullName: user.userMetadata?['full_name'],
-          isEmailVerified: user.emailConfirmedAt != null,
+        final dio = Dio();
+        dio.options.headers = {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${session.accessToken}',
+          'ngrok-skip-browser-warning': 'true',
+        };
+        
+        final response = await dio.get(
+          ApiConfig.userProfile,
         );
+
+        if (response.statusCode == 200 && response.data['success'] == true) {
+          final profileData = response.data['data'];
+          print('✅ getCurrentUser: Perfil obtenido del backend');
+          
+          // Convertir camelCase del backend a snake_case para el modelo
+          final convertedData = {
+            'id': profileData['id'],
+            'email': profileData['email'],
+            'full_name': profileData['fullName'] ?? profileData['full_name'],
+            'avatar_url': profileData['avatarUrl'] ?? profileData['avatar_url'],
+            'phone_number': profileData['phoneNumber'] ?? profileData['phone_number'],
+            'created_at': profileData['createdAt']?.toString() ?? profileData['created_at'],
+            'updated_at': profileData['updatedAt']?.toString() ?? profileData['updated_at'],
+            'is_email_verified': profileData['isEmailVerified'] ?? profileData['is_email_verified'] ?? false,
+            'role': profileData['role'] ?? 'user',
+          };
+          
+          return UserModel.fromJson(convertedData).toEntity();
+        } else {
+          throw Exception('Respuesta inválida del backend');
+        }
+      } catch (e) {
+        print('⚠️ getCurrentUser: Error al obtener perfil del backend: $e');
+        print('   Intentando obtener perfil directamente de Supabase...');
+        
+        // Fallback: Intentar obtener perfil directamente de Supabase
+        try {
+          final profileData = await _supabaseClient
+              .from('profiles')
+              .select()
+              .eq('id', user.id)
+              .single();
+
+          print('✅ getCurrentUser: Perfil obtenido de Supabase');
+          return UserModel.fromJson(profileData).toEntity();
+        } catch (supabaseError) {
+          print('⚠️ getCurrentUser: Error al obtener perfil de Supabase: $supabaseError');
+          // Si no hay perfil, retornar usuario básico
+          return UserEntity(
+            id: user.id,
+            email: user.email ?? '',
+            fullName: user.userMetadata?['full_name'],
+            isEmailVerified: user.emailConfirmedAt != null,
+          );
+        }
       }
     } catch (e) {
+      print('❌ getCurrentUser: Error general: $e');
       return null;
     }
   }

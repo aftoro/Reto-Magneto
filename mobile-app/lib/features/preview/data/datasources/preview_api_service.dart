@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide MultipartFile;
 import '../../../../core/config/api_config.dart';
 import '../models/preview_entity.dart';
 
@@ -6,8 +7,47 @@ class PreviewApiService {
   final Dio _dio = Dio();
 
   PreviewApiService() {
-    _dio.options.baseUrl = ApiConfig.baseUrl;
+    // Los endpoints de preview están fuera de /api
+    final urlWithoutApi = ApiConfig.baseUrl.replaceAll('/api', '');
+    _dio.options.baseUrl = urlWithoutApi;
     _dio.options.headers = ApiConfig.defaultHeaders;
+  }
+
+  /// Obtener headers con autenticación
+  Future<Map<String, String>> _getAuthHeaders({bool retry = false}) async {
+    final headers = Map<String, String>.from(ApiConfig.defaultHeaders);
+    
+    try {
+      // Obtener sesión actual directamente
+      var session = Supabase.instance.client.auth.currentSession;
+      
+      // Si no hay sesión o el token está vacío, intentar refrescar
+      if ((session == null || session.accessToken.isEmpty) && !retry) {
+        print('🔄 Token expirado o no disponible, intentando refrescar...');
+        try {
+          // Intentar refrescar la sesión
+          final refreshedSession = await Supabase.instance.client.auth.refreshSession();
+          session = refreshedSession.session;
+          print('✅ Token refrescado exitosamente');
+        } catch (refreshError) {
+          print('⚠️ Error al refrescar token: $refreshError');
+          // Si falla el refresh, verificar si hay sesión guardada
+          session = Supabase.instance.client.auth.currentSession;
+        }
+      }
+      
+      // Verificar y agregar token
+      if (session != null && session.accessToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ${session.accessToken}';
+        print('🔐 Token de autenticación agregado a headers (${session.user.email ?? session.user.id})');
+      } else {
+        print('⚠️ No hay sesión de Supabase disponible para preview');
+      }
+    } catch (e) {
+      print('⚠️ Error al obtener token de Supabase: $e');
+    }
+    
+    return headers;
   }
 
   /// Crear preview de post
@@ -15,7 +55,8 @@ class PreviewApiService {
     try {
       // Preparar datos JSON para el backend
       final jsonData = {
-        'topic': request.topic,
+        'type': 'post', // Especificar tipo para el backend
+        'prompt': request.topic, // El backend espera 'prompt' no 'topic'
         'style': request.style,
         'target_audience': request.targetAudience,
       };
@@ -24,7 +65,8 @@ class PreviewApiService {
       if (request.referenceImage != null) {
         final formData = FormData();
         formData.fields.addAll([
-          MapEntry('topic', request.topic),
+          MapEntry('type', 'post'),
+          MapEntry('prompt', request.topic),
           MapEntry('style', request.style),
           MapEntry('target_audience', request.targetAudience),
         ]);
@@ -33,14 +75,14 @@ class PreviewApiService {
           await MultipartFile.fromFile(request.referenceImage!),
         ));
         
-        final response = await _dio.post('/preview/post', data: formData);
+        final response = await _dio.post('/generate/preview', data: formData);
         print('Response data: ${response.data}');
-        return _convertBackendResponse(response.data, request);
+        return _convertBackendResponse(response.data, request, type: 'post');
       } else {
         // Sin imagen, enviar JSON puro
-        final response = await _dio.post('/preview/post', data: jsonData);
+        final response = await _dio.post('/generate/preview', data: jsonData);
         print('Response data: ${response.data}');
-        return _convertBackendResponse(response.data, request);
+        return _convertBackendResponse(response.data, request, type: 'post');
       }
     } on DioException catch (e) {
       print('DioException: ${e.response?.data}');
@@ -56,7 +98,8 @@ class PreviewApiService {
     try {
       // Preparar datos JSON para el backend
       final jsonData = {
-        'topic': request.topic,
+        'type': 'story', // Especificar tipo para el backend
+        'prompt': request.topic, // El backend espera 'prompt' no 'topic'
         'style': request.style,
         'target_audience': request.targetAudience,
       };
@@ -65,7 +108,8 @@ class PreviewApiService {
       if (request.referenceImage != null) {
         final formData = FormData();
         formData.fields.addAll([
-          MapEntry('topic', request.topic),
+          MapEntry('type', 'story'),
+          MapEntry('prompt', request.topic),
           MapEntry('style', request.style),
           MapEntry('target_audience', request.targetAudience),
         ]);
@@ -74,14 +118,14 @@ class PreviewApiService {
           await MultipartFile.fromFile(request.referenceImage!),
         ));
         
-        final response = await _dio.post('/preview/story', data: formData);
+        final response = await _dio.post('/generate/preview', data: formData);
         print('Response data: ${response.data}');
-        return _convertBackendResponse(response.data, request);
+        return _convertBackendResponse(response.data, request, type: 'story');
       } else {
         // Sin imagen, enviar JSON puro
-        final response = await _dio.post('/preview/story', data: jsonData);
+        final response = await _dio.post('/generate/preview', data: jsonData);
         print('Response data: ${response.data}');
-        return _convertBackendResponse(response.data, request);
+        return _convertBackendResponse(response.data, request, type: 'story');
       }
     } on DioException catch (e) {
       print('DioException: ${e.response?.data}');
@@ -97,7 +141,9 @@ class PreviewApiService {
     try {
       // Preparar datos JSON para el backend con valores por defecto
       final jsonData = {
-        'prompt': request.prompt,
+        'type': 'reel', // Especificar tipo explícitamente
+        'prompt': request.prompt, // Backend acepta 'prompt' o 'topic'
+        'topic': request.prompt, // También enviar como 'topic' para consistencia
         'accent': request.accent ?? 'neutral',
         'style': request.style ?? 'realista',
         'duration': request.duration ?? 8,
@@ -106,8 +152,7 @@ class PreviewApiService {
 
       print('DEBUG: Creating reel with data: $jsonData');
       
-      // Los reels no usan imagen de referencia, solo JSON
-      final response = await _dio.post('/preview/reel', data: jsonData);
+      final response = await _dio.post('/generate/preview', data: jsonData);
       print('Response data: ${response.data}');
       
       // Convertir CreateReelRequest a CreatePreviewRequest para compatibilidad
@@ -118,7 +163,36 @@ class PreviewApiService {
         referenceImage: null, // Los reels no usan imagen de referencia
       );
       
-      return _convertBackendResponse(response.data, previewRequest);
+      // Verificar si el backend devolvió status "generating" (reel en background)
+      if (response.data['data'] != null && 
+          response.data['data']['status'] == 'generating') {
+        // El reel se está generando pero aún no hay previewId
+        // Crear un preview temporal sin ID real (se creará cuando esté listo)
+        final tempPreview = PreviewEntity(
+          id: 'temp-${DateTime.now().millisecondsSinceEpoch}', // ID temporal
+          type: 'reel',
+          topic: request.prompt,
+          style: request.style ?? 'realista',
+          targetAudience: request.targetAudience ?? 'desarrolladores y profesionales tech',
+          previewImage: '', // Sin imagen todavía
+          caption: 'Generando reel...',
+          status: 'generating',
+          createdAt: DateTime.now(),
+        );
+        
+        return PreviewResponse(
+          preview: tempPreview,
+          suggestedCorrections: [],
+          metadata: {
+            'isGenerating': true, 
+            'topic': request.prompt, // Guardar el tema para buscar después
+            'createdAt': DateTime.now().toIso8601String(),
+          },
+        );
+      }
+      
+      // Pasar el tipo explícitamente como 'reel' para la conversión
+      return _convertBackendResponse(response.data, previewRequest, type: 'reel');
     } on DioException catch (e) {
       print('DioException: ${e.response?.data}');
       throw _handleError(e);
@@ -160,13 +234,120 @@ class PreviewApiService {
     PublishPreviewRequest request,
   ) async {
     try {
-      final response = await _dio.post(
-        '/preview/$previewId/publish',
-        data: request.toJson(),
-      );
-      return PreviewEntity.fromJson(response.data);
+      // El endpoint de publicación está en /api/preview/:id/publish
+      // Usar baseUrl que ya incluye /api y construir la ruta correctamente
+      final dioWithApi = Dio();
+      dioWithApi.options.baseUrl = ApiConfig.baseUrl;
+      
+      // Obtener headers con autenticación
+      var headers = await _getAuthHeaders();
+      
+      // Construir la URL completa para logging
+      final fullUrl = '${ApiConfig.baseUrl}/preview/$previewId/publish';
+      print('📤 [PreviewApiService] Publicando preview $previewId');
+      print('   🔗 URL: $fullUrl');
+      print('   🔐 Headers con auth: ${headers.containsKey('Authorization')}');
+      
+      // La ruta debe empezar con / para que Dio la concatene correctamente al baseUrl
+      try {
+        final response = await dioWithApi.post(
+          '/preview/$previewId/publish',
+          data: request.toJson(),
+          options: Options(
+            headers: headers,
+          ),
+        );
+        
+        print('✅ [PreviewApiService] Preview publicado exitosamente');
+        
+        // Mapear la respuesta del backend (snake_case) al formato esperado por PreviewEntity (camelCase)
+        final backendData = response.data as Map<String, dynamic>;
+        final mappedData = {
+          'id': backendData['id'] ?? '',
+          'type': backendData['type'] ?? 'post',
+          'topic': backendData['topic'] ?? '',
+          'style': backendData['style'] ?? '',
+          'targetAudience': backendData['target_audience'] ?? '',
+          'referenceImage': backendData['reference_image'],
+          'previewImage': backendData['image_url'] ?? '', // Usar solo image_url (para todos los tipos)
+          'videoUrl': null, // Ya no se usa video_url en la tabla
+          'caption': backendData['final_caption'] ?? backendData['suggested_caption']?['captions']?[0]?['content'] ?? '',
+          'status': backendData['status'] ?? 'published',
+          'createdAt': backendData['created_at'] ?? DateTime.now().toIso8601String(),
+          'updatedAt': backendData['updated_at'],
+          'publishedAt': backendData['published_at'],
+          'corrections': null,
+          'views': backendData['views'] ?? 0,
+          'likes': backendData['likes'] ?? 0,
+          'comments': backendData['comments'] ?? 0,
+          'metadata': {
+            'improve_suggestions': backendData['improve_suggestions'],
+            'suggested_caption': backendData['suggested_caption'],
+          },
+        };
+        
+        return PreviewEntity.fromJson(mappedData);
+      } on DioException catch (e) {
+        // Si es un error 401, intentar refrescar el token y reintentar una vez
+        if (e.response?.statusCode == 401) {
+          print('🔄 Error 401 detectado, intentando refrescar token y reintentar...');
+          try {
+            // Refrescar el token
+            headers = await _getAuthHeaders(retry: true);
+            
+            // Reintentar la petición con el nuevo token
+            final response = await dioWithApi.post(
+              '/preview/$previewId/publish',
+              data: request.toJson(),
+              options: Options(
+                headers: headers,
+              ),
+            );
+            
+            print('✅ [PreviewApiService] Preview publicado exitosamente después de refrescar token');
+            
+            // Mapear la respuesta del backend (snake_case) al formato esperado por PreviewEntity (camelCase)
+            final backendData = response.data as Map<String, dynamic>;
+            final mappedData = {
+              'id': backendData['id'] ?? '',
+              'type': backendData['type'] ?? 'post',
+              'topic': backendData['topic'] ?? '',
+              'style': backendData['style'] ?? '',
+              'targetAudience': backendData['target_audience'] ?? '',
+              'referenceImage': backendData['reference_image'],
+              'previewImage': backendData['image_url'] ?? '', // Usar solo image_url (para todos los tipos)
+              'videoUrl': null, // Ya no se usa video_url en la tabla
+              'caption': backendData['final_caption'] ?? backendData['suggested_caption']?['captions']?[0]?['content'] ?? '',
+              'status': backendData['status'] ?? 'published',
+              'createdAt': backendData['created_at'] ?? DateTime.now().toIso8601String(),
+              'updatedAt': backendData['updated_at'],
+              'publishedAt': backendData['published_at'],
+              'corrections': null,
+              'views': backendData['views'] ?? 0,
+              'likes': backendData['likes'] ?? 0,
+              'comments': backendData['comments'] ?? 0,
+              'metadata': {
+                'improve_suggestions': backendData['improve_suggestions'],
+                'suggested_caption': backendData['suggested_caption'],
+              },
+            };
+            
+            return PreviewEntity.fromJson(mappedData);
+          } catch (retryError) {
+            print('❌ Error al reintentar después de refrescar token: $retryError');
+            throw _handleError(e);
+          }
+        } else {
+          throw _handleError(e);
+        }
+      }
     } on DioException catch (e) {
+      print('❌ [PreviewApiService] Error publicando preview: ${e.response?.statusCode}');
+      print('   Mensaje: ${e.response?.data}');
       throw _handleError(e);
+    } catch (e) {
+      print('❌ Error inesperado al publicar preview: $e');
+      throw Exception('Error al publicar preview: $e');
     }
   }
 
@@ -200,14 +381,21 @@ class PreviewApiService {
         if (data['previews'] != null) {
           final previews = (data['previews'] as List).map((preview) {
             // Mapear los campos correctamente
+            final type = preview['type'] ?? 'post';
+            final imageUrl = preview['image_url'] ?? '';
+            
+            // Usar image_url para todos los tipos (imagen o video)
+            final previewImage = imageUrl.isNotEmpty ? imageUrl : '';
+            
             return PreviewEntity(
               id: preview['id'] ?? '',
-              type: preview['type'] ?? 'post',
+              type: type,
               topic: preview['topic'] ?? '',
               style: preview['style'] ?? '',
               targetAudience: preview['target_audience'] ?? '',
               referenceImage: preview['reference_image'],
-              previewImage: preview['image_url'] ?? '',
+              previewImage: previewImage,
+              videoUrl: null, // Ya no se usa video_url en la tabla
               caption: preview['final_caption'] ?? preview['suggested_caption']?['captions']?[0]?['content'] ?? '',
               status: preview['status'] ?? 'draft',
               createdAt: DateTime.tryParse(preview['created_at'] ?? '') ?? DateTime.now(),
@@ -244,8 +432,128 @@ class PreviewApiService {
   /// Obtener preview específico
   Future<PreviewEntity> getPreview(String previewId) async {
     try {
-      final response = await _dio.get('/preview/$previewId');
-      return PreviewEntity.fromJson(response.data);
+      // El endpoint está en /api/preview/:id, usar ApiConfig.baseUrl directamente
+      final dioWithApi = Dio();
+      dioWithApi.options.baseUrl = ApiConfig.baseUrl;
+      dioWithApi.options.headers = ApiConfig.defaultHeaders;
+      
+      // Obtener headers con autenticación
+      var headers = await _getAuthHeaders();
+      
+      try {
+        final response = await dioWithApi.get(
+          '/preview/$previewId',
+          options: Options(headers: headers),
+        );
+        
+        // Mapear la respuesta del backend (snake_case) al formato esperado por PreviewEntity (camelCase)
+        final backendData = response.data is Map<String, dynamic> 
+            ? (response.data['preview'] ?? response.data)
+            : response.data as Map<String, dynamic>;
+        
+        final mappedData = {
+          'id': backendData['id']?.toString() ?? '',
+          'type': backendData['type']?.toString() ?? 'post',
+          'topic': backendData['topic']?.toString() ?? '',
+          'style': backendData['style']?.toString() ?? '',
+          'targetAudience': backendData['target_audience']?.toString() ?? '',
+          'referenceImage': backendData['reference_image']?.toString(),
+          'previewImage': backendData['image_url']?.toString() ?? '', // Usar solo image_url
+          'videoUrl': null, // Ya no se usa video_url en la tabla
+          'caption': backendData['final_caption']?.toString() ?? 
+                     backendData['suggested_caption']?['captions']?[0]?['content']?.toString() ?? '',
+          'status': backendData['status']?.toString() ?? 'draft',
+          'createdAt': backendData['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+          'updatedAt': backendData['updated_at']?.toString(),
+          'publishedAt': backendData['published_at']?.toString(),
+          'corrections': null,
+          'views': backendData['views'] ?? 0,
+          'likes': backendData['likes'] ?? 0,
+          'comments': backendData['comments'] ?? 0,
+          'metadata': {
+            'improve_suggestions': backendData['improve_suggestions'],
+            'suggested_caption': backendData['suggested_caption'],
+          },
+        };
+        
+        return PreviewEntity.fromJson(mappedData);
+      } on DioException catch (e) {
+        // Si es un error 401, intentar refrescar el token y reintentar una vez
+        if (e.response?.statusCode == 401) {
+          print('🔄 Error 401 al obtener preview, intentando refrescar token y reintentar...');
+          try {
+            // Refrescar el token
+            headers = await _getAuthHeaders(retry: true);
+            
+            // Reintentar la petición con el nuevo token
+            final response = await dioWithApi.get(
+              '/preview/$previewId',
+              options: Options(headers: headers),
+            );
+            
+            // Mapear la respuesta del backend (snake_case) al formato esperado por PreviewEntity (camelCase)
+            final backendData = response.data is Map<String, dynamic> 
+                ? (response.data['preview'] ?? response.data)
+                : response.data as Map<String, dynamic>;
+            
+            final mappedData = {
+              'id': backendData['id']?.toString() ?? '',
+              'type': backendData['type']?.toString() ?? 'post',
+              'topic': backendData['topic']?.toString() ?? '',
+              'style': backendData['style']?.toString() ?? '',
+              'targetAudience': backendData['target_audience']?.toString() ?? '',
+              'referenceImage': backendData['reference_image']?.toString(),
+              'previewImage': backendData['image_url']?.toString() ?? '', // Usar solo image_url
+              'videoUrl': null, // Ya no se usa video_url en la tabla
+              'caption': backendData['final_caption']?.toString() ?? 
+                         backendData['suggested_caption']?['captions']?[0]?['content']?.toString() ?? '',
+              'status': backendData['status']?.toString() ?? 'draft',
+              'createdAt': backendData['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+              'updatedAt': backendData['updated_at']?.toString(),
+              'publishedAt': backendData['published_at']?.toString(),
+              'corrections': null,
+              'views': backendData['views'] ?? 0,
+              'likes': backendData['likes'] ?? 0,
+              'comments': backendData['comments'] ?? 0,
+              'metadata': {
+                'improve_suggestions': backendData['improve_suggestions'],
+                'suggested_caption': backendData['suggested_caption'],
+              },
+            };
+            
+            return PreviewEntity.fromJson(mappedData);
+          } catch (retryError) {
+            print('❌ Error al reintentar después de refrescar token: $retryError');
+            throw _handleError(e);
+          }
+        } else {
+          throw _handleError(e);
+        }
+      }
+    } on DioException catch (e) {
+      throw _handleError(e);
+    } catch (e) {
+      print('❌ Error inesperado al obtener preview: $e');
+      throw Exception('Error al obtener preview: $e');
+    }
+  }
+
+  /// Verificar estado de un preview (para polling de reels en background)
+  Future<Map<String, dynamic>> getPreviewStatus(String previewId) async {
+    try {
+      // El endpoint de status está en /api, usar ApiConfig.baseUrl directamente
+      final dioWithApi = Dio();
+      dioWithApi.options.baseUrl = ApiConfig.baseUrl;
+      dioWithApi.options.headers = ApiConfig.defaultHeaders;
+      
+      // Obtener headers con autenticación
+      final headers = await _getAuthHeaders();
+      
+      final response = await dioWithApi.get(
+        '/preview/$previewId/status',
+        options: Options(headers: headers),
+      );
+      return response.data;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -310,48 +618,76 @@ class PreviewApiService {
   }
 
   /// Convertir respuesta del backend al formato esperado
-  PreviewResponse _convertBackendResponse(Map<String, dynamic> responseData, CreatePreviewRequest request) {
+  PreviewResponse _convertBackendResponse(
+    Map<String, dynamic> responseData, 
+    CreatePreviewRequest request, {
+    String? type, // Tipo explícito (reel, post, story)
+  }) {
     try {
-      final backendResponse = BackendPreviewResponse.fromJson(responseData);
-      final backendPreview = backendResponse.preview;
+      // El backend ahora devuelve: { success: true, data: { mediaUrl, captionOptions, improveSuggestions } }
+      final data = responseData['data'] as Map<String, dynamic>?;
       
-      // Extract caption from the complex structure
-      String caption = '';
-      if (backendPreview.suggested_caption is Map<String, dynamic>) {
-        final captionData = backendPreview.suggested_caption as Map<String, dynamic>;
-        if (captionData['captions'] is List && (captionData['captions'] as List).isNotEmpty) {
-          final firstCaption = (captionData['captions'] as List).first as Map<String, dynamic>;
-          caption = firstCaption['content']?.toString() ?? '';
-        }
-      } else if (backendPreview.suggested_caption is String) {
-        caption = backendPreview.suggested_caption as String;
-      }
-      
-      // Extract improve_suggestions from backend response if available
-      List<String> improveSuggestions = [];
-      if (responseData['preview'] != null && 
-          responseData['preview']['improve_suggestions'] != null) {
-        final suggestions = responseData['preview']['improve_suggestions'] as List;
-        improveSuggestions = suggestions.map((s) => s.toString()).toList();
+      if (data == null) {
+        throw Exception('Respuesta del servidor sin campo "data"');
       }
 
-      // Extract suggested_caption structure from backend response
+      // Extraer mediaUrl (usar image_url para todos los tipos)
+      final mediaUrl = data['mediaUrl'] as String? ?? '';
+      
+      // Determinar el tipo: usar el tipo explícito si está disponible, sino 'post'
+      final finalType = type ?? 'post';
+      
+      // Extraer captionOptions (solo para posts y reels, no para stories)
+      String caption = '';
       Map<String, dynamic>? suggestedCaptionData;
-      if (responseData['preview'] != null && 
-          responseData['preview']['suggested_caption'] != null) {
-        suggestedCaptionData = responseData['preview']['suggested_caption'] as Map<String, dynamic>;
+      if (finalType != 'story') {
+        final captionOptions = data['captionOptions'] as Map<String, dynamic>?;
+        if (captionOptions != null && captionOptions['captions'] is List) {
+          final captions = captionOptions['captions'] as List;
+          if (captions.isNotEmpty) {
+            final firstCaption = captions.first as Map<String, dynamic>;
+            caption = firstCaption['content']?.toString() ?? '';
+          }
+          suggestedCaptionData = captionOptions;
+        }
       }
+      
+      // Si no hay caption de captionOptions, usar string vacío
+      if (caption.isEmpty) {
+        caption = '';
+      }
+      
+      // Extraer improveSuggestions
+      List<String> improveSuggestions = [];
+      final suggestions = data['improveSuggestions'];
+      if (suggestions is List) {
+        improveSuggestions = suggestions.map((s) => s?.toString() ?? '').where((s) => s.isNotEmpty).toList();
+      } else if (suggestions is String) {
+        improveSuggestions = [suggestions];
+      }
+
+      // Extraer previewId del backend
+      // El backend devuelve: { success: true, data: { previewId: ..., id: ..., mediaUrl: ... } }
+      // Nota: 'data' ya es el objeto interno extraído en la línea 570
+      final previewId = data['previewId'] as String? ?? 
+                       data['id'] as String? ?? 
+                       DateTime.now().millisecondsSinceEpoch.toString();
+      
+      print('🔍 [PreviewApiService] PreviewId extraído: $previewId');
+      print('   De data[previewId]: ${data['previewId']}');
+      print('   De data[id]: ${data['id']}');
+      print('   Tipo de preview: $finalType');
 
       // Crear PreviewEntity con los datos del backend
       final preview = PreviewEntity(
-        id: backendPreview.id,
-        type: backendPreview.type,
+        id: previewId,
+        type: finalType,
         topic: request.topic,
         style: request.style,
         targetAudience: request.targetAudience,
         referenceImage: request.referenceImage,
-        previewImage: backendPreview.image_url,
-        videoUrl: backendPreview.video_url, // For reels
+        previewImage: mediaUrl.isNotEmpty ? mediaUrl : '',
+        videoUrl: null, // Ya no se usa video_url en la tabla
         caption: caption,
         status: 'draft',
         createdAt: DateTime.now(),
@@ -360,27 +696,31 @@ class PreviewApiService {
         comments: 0,
         metadata: {
           'generated_at': DateTime.now().toIso8601String(),
-          'backend_message': backendResponse.message,
           'improve_suggestions': improveSuggestions,
           'suggested_caption': suggestedCaptionData,
+          'media_url': mediaUrl,
         },
       );
 
-      // Generar correcciones sugeridas basadas en el contenido
-      final suggestedCorrections = _generateSuggestedCorrections(request.topic, request.targetAudience);
+      // Generar correcciones sugeridas basadas en el contenido si no hay sugerencias del backend
+      final suggestedCorrections = improveSuggestions.isNotEmpty 
+          ? improveSuggestions 
+          : _generateSuggestedCorrections(request.topic, request.targetAudience);
 
       return PreviewResponse(
         preview: preview,
-        suggestedCorrections: improveSuggestions.isNotEmpty ? improveSuggestions : suggestedCorrections,
+        suggestedCorrections: suggestedCorrections,
         metadata: {
           'generated_at': DateTime.now().toIso8601String(),
-          'backend_message': backendResponse.message,
           'improve_suggestions': improveSuggestions,
           'suggested_caption': suggestedCaptionData,
+          'media_url': mediaUrl,
         },
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error converting backend response: $e');
+      print('Stack trace: $stackTrace');
+      print('Response data: $responseData');
       throw Exception('Error procesando respuesta del servidor: $e');
     }
   }

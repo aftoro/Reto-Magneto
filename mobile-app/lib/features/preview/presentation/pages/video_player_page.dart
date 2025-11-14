@@ -83,9 +83,29 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           icon: const Icon(Icons.close, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          widget.title,
-          style: const TextStyle(color: Colors.white),
+        title: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.white.withOpacity(0.1),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Image.asset(
+                  'assets/images/logo_m.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              widget.title,
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
         ),
         actions: [
           IconButton(
