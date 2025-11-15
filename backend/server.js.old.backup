@@ -2570,6 +2570,187 @@ app.get('/api/analytics/ai-insights', async (req, res) => {
   }
 });
 
+// Nuevo endpoint: análisis de IA reutilizando estadísticas ya calculadas
+app.post('/api/analytics/ai-insights', async (req, res) => {
+  try {
+    console.log('📊 Generando análisis de IA (reutilizando stats provistas)...');
+    const { posts: postsData, conversations: dmData } = req.body || {};
+
+    let computedPosts = postsData;
+    let computedDM = dmData;
+
+    if (!computedPosts) {
+      console.log('ℹ️ No llegaron posts precomputados, calculando...');
+      computedPosts = await getPostsAnalytics();
+    }
+    if (!computedDM) {
+      console.log('ℹ️ No llegaron DMs precomputados, calculando...');
+      computedDM = await getDMAnalytics();
+    }
+
+    const aiAnalysis = await generateAIAnalytics(computedPosts, computedDM);
+
+    const toStringSafe = (v) => (v == null ? '' : String(v));
+    const toArrayOfStrings = (v) => Array.isArray(v) ? v.map((x) => String(x)) : [];
+
+    let normalized;
+    if (aiAnalysis && typeof aiAnalysis === 'object' && aiAnalysis.format === 'text' && aiAnalysis.analysis) {
+      // La IA devolvió texto libre; empaquetar como insight simple
+      normalized = {
+        marketTrends: { hotSectors: [], demandPatterns: '', growthOpportunities: '' },
+        userBehavior: { engagementLevel: '', profileCompletion: '', interactionPatterns: '' },
+        recommendations: [],
+        insights: [toStringSafe(aiAnalysis.analysis)],
+      };
+    } else {
+      const mt = aiAnalysis?.marketTrends || aiAnalysis?.market_trends || {};
+      const ub = aiAnalysis?.userBehavior || aiAnalysis?.user_behavior || {};
+      normalized = {
+        marketTrends: {
+          hotSectors: Array.isArray(mt.hotSectors) ? mt.hotSectors.map(String) : (Array.isArray(aiAnalysis?.hotSectors) ? aiAnalysis.hotSectors.map(String) : []),
+          demandPatterns: toStringSafe(mt.demandPatterns || aiAnalysis?.demandPatterns || mt.demand_patterns),
+          growthOpportunities: toStringSafe(mt.growthOpportunities || aiAnalysis?.growthOpportunities || mt.growth_opportunities),
+        },
+        userBehavior: {
+          engagementLevel: toStringSafe(ub.engagementLevel || aiAnalysis?.engagementLevel || ub.engagement_level),
+          profileCompletion: toStringSafe(ub.profileCompletion || aiAnalysis?.profileCompletion || ub.profile_completion),
+          interactionPatterns: toStringSafe(ub.interactionPatterns || aiAnalysis?.interactionPatterns || ub.interaction_patterns),
+        },
+        recommendations: toArrayOfStrings(aiAnalysis?.recommendations || aiAnalysis?.recs || aiAnalysis?.recos),
+        insights: toArrayOfStrings(aiAnalysis?.insights || aiAnalysis?.findings),
+      };
+    }
+
+    // Defaults por si algo falta
+    const aiInsights = normalized || {
+      marketTrends: { hotSectors: [], demandPatterns: '', growthOpportunities: '' },
+      userBehavior: { engagementLevel: '', profileCompletion: '', interactionPatterns: '' },
+      recommendations: [],
+      insights: [],
+    };
+
+    res.json({ success: true, message: 'Análisis IA generado', aiInsights });
+  } catch (error) {
+    console.error('❌ Error en análisis IA (POST):', error);
+    res.status(500).json({ success: false, error: 'Error generando análisis IA', details: error.message });
+  }
+});
+
+// Endpoint de estadísticas en streaming (SSE)
+app.get('/api/analytics/ai-insights/stream', async (req, res) => {
+  try {
+    // Configurar SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const send = (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    // Heartbeat cada 10s para mantener viva la conexión
+    const heartbeat = setInterval(() => {
+      try { res.write(': keep-alive\n\n'); } catch (_) {}
+    }, 10000);
+
+    send({ type: 'status', message: 'Iniciando análisis y recopilación de datos...' });
+
+    // Obtener estadísticas requeridas para construir el prompt (no se envían por SSE)
+    const postsData = await getPostsAnalytics();
+    const dmData = await getDMAnalytics();
+
+    send({ type: 'status', message: 'Datos recopilados. Iniciando análisis de IA (stream)...' });
+
+    // Construir prompt y hacer streaming con DeepSeek
+    const userContent = `Analiza estas estadísticas de Magneto Empleos y genera insights inteligentes:
+
+ESTADÍSTICAS DE POSTS:
+- Total de posts: ${postsData?.totalPosts || 0}
+- Posts generados por IA: ${postsData?.aiGeneratedPosts || 0}
+- Posts manuales: ${postsData?.manualPosts || 0}
+- Total de comentarios: ${postsData?.totalComments || 0}
+- Engagement promedio: ${postsData?.avgEngagement || 0}
+- Respuestas de IA: ${postsData?.aiResponses || 0}
+- Comentarios de usuarios: ${postsData?.userComments || 0}
+
+SECTORES MÁS POPULARES:
+${postsData?.topSectors?.map(s => `- ${s.sector}: ${s.count} posts`).join('\n') || 'Ninguno'}
+
+POSICIONES MÁS DEMANDADAS:
+${postsData?.topPositions?.map(p => `- ${p.position}: ${p.count} menciones`).join('\n') || 'Ninguna'}
+
+ESTADÍSTICAS DE DMs:
+- Total de conversaciones: ${dmData?.totalConversations || 0}
+- Conversaciones activas (última semana): ${dmData?.activeConversations || 0}
+- Completitud promedio de datos: ${dmData?.avgCompletion || 0}%
+
+PROFESIONES MÁS INTERESADAS:
+${dmData?.topProfessions?.map(p => `- ${p.profession}: ${p.count} usuarios`).join('\n') || 'Ninguna'}
+
+UBICACIONES MÁS ACTIVAS:
+${dmData?.topLocations?.map(l => `- ${l.location}: ${l.count} usuarios`).join('\n') || 'Ninguna'}
+
+DISTRIBUCIÓN DE EXPERIENCIA:
+${dmData?.experienceDistribution?.map(e => `- ${e.level}: ${e.count} usuarios`).join('\n') || 'Ninguna'}
+
+ESTADÍSTICAS DE MENSAJES:
+- Total de mensajes: ${dmData?.messageStats?.total || 0}
+- Generados por IA: ${dmData?.messageStats?.aiGenerated || 0}
+- Generados por usuarios: ${dmData?.messageStats?.userGenerated || 0}
+- Ratio de IA: ${dmData?.messageStats?.aiRatio || 0}%
+
+Genera un análisis inteligente en JSON con:
+- Tendencias del mercado laboral
+- Comportamiento de usuarios
+- Oportunidades de mejora
+- Insights específicos
+- Recomendaciones accionables`;
+
+    const messages = [
+      { role: 'system', content: 'Eres un analista de datos experto. Devuelve SIEMPRE JSON válido.' },
+      { role: 'user', content: userContent }
+    ];
+
+    let aggregated = '';
+    let gotAnyDelta = false;
+    await callDeepSeekStream(messages, ({ text, done }) => {
+      if (text) {
+        aggregated += text;
+        gotAnyDelta = true;
+        send({ type: 'delta', text });
+        try { console.log('🔹 DeepSeek delta:', text); } catch (_) {}
+      }
+      if (done) {
+        // Intentar parsear el JSON final
+        let parsed = null;
+        try {
+          const clean = aggregated.replace(/```json\s*/g, '').replace(/```/g, '');
+          parsed = JSON.parse(clean);
+        } catch (_) {}
+        send({ type: 'done', fullText: aggregated, json: parsed });
+        try { console.log('✅ DeepSeek done. Full length:', aggregated.length); } catch (_) {}
+        clearInterval(heartbeat);
+        res.end();
+      }
+    });
+
+    // Si no hubo deltas, finalizar con error explícito
+    if (!gotAnyDelta) {
+      send({ type: 'error', message: 'No se recibieron datos del proveedor IA' });
+      clearInterval(heartbeat);
+      res.end();
+    }
+
+  } catch (error) {
+    try {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
+      res.end();
+    } catch (_) {}
+  }
+});
+
 // Endpoint de estadísticas básicas (sin IA)
 app.get('/api/analytics/basic', async (req, res) => {
   try {
@@ -3084,8 +3265,16 @@ app.post('/api/preview/:id/corrections', async (req, res) => {
 app.post('/api/preview/:id/publish', async (req, res) => {
   try {
     const { id } = req.params;
-    const { final_caption = null, image_url = null } = req.body;
+    // Soportar tanto camelCase (frontend) como snake_case
+    const final_caption = req.body.finalCaption || req.body.final_caption || null;
+    const image_url = req.body.imageUrl || req.body.image_url || null;
 
+    console.log('📥 REQUEST COMPLETO recibido en /api/preview/:id/publish:');
+    console.log('  - params.id:', id);
+    console.log('  - body:', JSON.stringify(req.body, null, 2));
+    console.log('  - final_caption (extraído):', final_caption);
+    console.log('  - final_caption type:', typeof final_caption);
+    console.log('  - image_url (extraído):', image_url);
     console.log('🚀 Publicando preview...', { id, final_caption, image_url });
 
     // Obtener preview
@@ -3343,6 +3532,116 @@ app.post('/api/test-image-generation', async (req, res) => {
 });
 
 // =============================================
+// ENDPOINT DE PRUEBA PARA DETECCIÓN DE EMOCIONES
+// =============================================
+
+app.get('/api/test/emotion/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log(`🧪 Probando detección de emoción para usuario: ${userId}`);
+
+    // Detectar emoción
+    const detectedEmotion = await detectUserEmotion(userId);
+    console.log(`🎭 Emoción detectada: ${detectedEmotion}`);
+
+    // Buscar conversación del usuario
+    const { data: conversation, error: conversationError } = await supabase
+      .from('conversaciones')
+      .select('id, user_current_emotion, updated_at')
+      .eq('user_id', userId)
+      .eq('platform', 'instagram')
+      .eq('conversation_type', 'dm')
+      .single();
+
+    if (conversationError) {
+      console.error('❌ Error buscando conversación:', conversationError);
+    }
+
+    // Obtener mensajes recientes para contexto
+    const { data: messages, error: messagesError } = await supabase
+      .from('mensajes')
+      .select(`
+        content, 
+        created_at,
+        conversaciones!inner(user_id)
+      `)
+      .eq('conversaciones.user_id', userId)
+      .eq('message_type', 'incoming')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (messagesError) {
+      console.error('❌ Error obteniendo mensajes:', messagesError);
+    }
+
+    res.json({
+      success: true,
+      userId: userId,
+      detectedEmotion: detectedEmotion,
+      conversation: conversation,
+      recentMessages: messages?.map(msg => ({
+        content: msg.content.substring(0, 100) + '...',
+        created_at: msg.created_at
+      })) || [],
+      messageCount: messages?.length || 0,
+      conversationError: conversationError?.message,
+      messagesError: messagesError?.message
+    });
+
+  } catch (error) {
+    console.error('❌ Error en prueba de emoción:', error);
+    res.status(500).json({ 
+      error: 'Error en prueba de detección de emoción',
+      details: error.message 
+    });
+  }
+});
+
+// =============================================
+// ENDPOINT DE PRUEBA PARA FUNCTION CALLS
+// =============================================
+
+app.post('/api/test/function-calls', async (req, res) => {
+  try {
+    const { userId, message } = req.body;
+    console.log(`🧪 Probando function calls para usuario: ${userId}`);
+    console.log(`📝 Mensaje de prueba: ${message}`);
+
+    // Simular contexto de DM
+    const context = { type: 'dm', username: 'test_user' };
+    
+    // Generar respuesta con function calling
+    const { reply, functionCalls } = await generateResponseWithFunctionCalling(
+      message,
+      context,
+      null, // mediaInfo
+      [], // messageHistory
+      null, // userData
+      userId
+    );
+
+    console.log(`🤖 Respuesta generada: ${reply}`);
+    console.log(`🔧 Function calls ejecutados: ${functionCalls?.length || 0}`);
+
+    res.json({
+      success: true,
+      userId: userId,
+      message: message,
+      reply: reply,
+      functionCalls: functionCalls || [],
+      functionCallsCount: functionCalls?.length || 0
+    });
+
+  } catch (error) {
+    console.error('❌ Error en prueba de function calls:', error);
+    res.status(500).json({ 
+      error: 'Error en prueba de function calls',
+      details: error.message 
+    });
+  }
+});
+
+// =============================================
 // INICIO DEL SERVIDOR
 // =============================================
 
@@ -3358,6 +3657,8 @@ app.listen(PORT, () => {
   console.log(`📱 Instagram Posts: http://localhost:${PORT}/api/instagram/posts`);
   console.log(`💬 Post Comments: http://localhost:${PORT}/api/instagram/posts/:id/comments`);
   console.log(`🔔 SSE Notifications: http://localhost:${PORT}/api/notifications/stream`);
+  console.log(`🎭 Test Emotion: http://localhost:${PORT}/api/test/emotion/:userId`);
+  console.log(`🔧 Test Function Calls: http://localhost:${PORT}/api/test/function-calls`);
   console.log(`💾 Supabase conectado: ${process.env.SUPABASE_URL ? '✅' : '❌'}`);
   console.log(`🤖 OpenAI/OpenRouter: ${process.env.OPENROUTER_API_KEY ? '✅' : '❌'}`);
   console.log(`🎨 Gemini AI: ${process.env.GEMINI_API_KEY ? '✅' : '❌'}`);

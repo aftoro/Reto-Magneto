@@ -1,6 +1,6 @@
-// Asegúrate de tener instalado el paquete: npm install @google/generative-ai
+// Asegúrate de tener instalado el paquete: npm install @google/genai
 require('dotenv').config();
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenAI } = require("@google/genai");
 
 // Carga tu API key desde las variables de entorno o ponla directamente (menos seguro)
 const API_KEY = process.env.GEMINI_API_KEY; // OJO: Asegúrate de tener configurada esta variable de entorno
@@ -10,7 +10,7 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 async function testAvailableModels() {
   console.log("Probando modelos conocidos de Google Generative AI...");
@@ -35,12 +35,21 @@ async function testAvailableModels() {
   for (const modelName of modelsToTest) {
     try {
       console.log(`\nProbando: ${modelName}`);
-      const model = genAI.getGenerativeModel({ model: modelName });
       
-      // Intentar generar contenido simple para verificar si el modelo funciona
-      const result = await model.generateContent("Hola");
-      const response = await result.response;
-      const text = response.text();
+      // Usar la nueva API de @google/genai
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: "Hola"
+      });
+      
+      // Buscar texto en las partes de la respuesta
+      let text = "";
+      for (const part of response.parts) {
+        if (part.text) {
+          text = part.text;
+          break;
+        }
+      }
       
       console.log(`✅ ${modelName} - FUNCIONA`);
       console.log(`   Respuesta de prueba: ${text.substring(0, 50)}...`);
@@ -58,4 +67,5 @@ async function testAvailableModels() {
   console.log("Prueba completada.");
 }
 
-testAvailableModels();
+// Ejecución automática deshabilitada - usar solo cuando se necesite probar modelos
+// testAvailableModels();

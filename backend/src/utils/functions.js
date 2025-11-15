@@ -1,7 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 const Fuse = require('fuse.js');
+const { createCanvas, loadImage } = require('canvas');
+const path = require('path');
 
 // Configuración de Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -51,6 +53,15 @@ function notifyNewConversation(conversationData) {
   });
 }
 
+// Función para notificar nuevo comentario
+function notifyNewComment(commentData) {
+  sendNotificationToClients({
+    type: 'new_comment',
+    data: commentData,
+    timestamp: new Date().toISOString()
+  });
+}
+
 // Configuración de OpenAI/OpenRouter
 
 // Configuración de Gemini
@@ -60,31 +71,199 @@ function getGeminiClient() {
     return null;
   }
 
-  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  try {
+    // El nuevo SDK @google/genai usa ai.models.generateContent() directamente
+    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    
+    // Validar que el cliente tenga el método necesario
+    if (client && client.models && typeof client.models.generateContent === 'function') {
+      return client;
+    } else {
+      console.error('Cliente Gemini inicializado pero no tiene el método models.generateContent');
+      return null;
+    }
+  } catch (error) {
+    console.error('Error inicializando cliente Gemini:', error);
+    return null;
+  }
 }
 
-// SYSTEM_PROMPT actualizado para recolección de datos
-const SYSTEM_PROMPT = `Eres Magneto, un asistente virtual súper pana que trabaja en Magneto Empleos. Eres como ese amigo que siempre sabe de trabajos y te ayuda a conseguir el empleo de tus sueños. 
+// Configuración de DeepSeek
+function getDeepSeekClient() {
+  if (!process.env.DEEPSEEK_API_KEY) {
+    console.error('DEEPSEEK_API_KEY no está configurado');
+    return null;
+  }
+
+  return {
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: 'https://api.deepseek.com/v1'
+  };
+}
+
+// Función para hacer llamadas a DeepSeek
+async function callDeepSeek(messages, model = 'deepseek-chat') {
+  try {
+    const deepSeekConfig = getDeepSeekClient();
+    if (!deepSeekConfig) {
+      throw new Error('DeepSeek no configurado');
+    }
+
+    const response = await fetch(`${deepSeekConfig.baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${deepSeekConfig.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`DeepSeek API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error llamando a DeepSeek:', error);
+    throw error;
+  }
+}
+
+// Streaming con DeepSeek (compatibilidad estilo OpenAI)
+async function callDeepSeekStream(messages, onDelta, model = 'deepseek-chat') {
+  try {
+    const deepSeekConfig = getDeepSeekClient();
+    if (!deepSeekConfig) {
+      throw new Error('DeepSeek no configurado');
+    }
+
+    // Timeout y abort controller para evitar cuelgues
+    const controller = new AbortController();
+    const timeoutMs = 45000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(`${deepSeekConfig.baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${deepSeekConfig.apiKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.7,
+        stream: true
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`DeepSeek stream error: ${response.status}`);
+    }
+
+    const decoder = new TextDecoder('utf-8');
+    const reader = response.body.getReader();
+    let aggregatedText = '';
+    let receivedAnyChunk = false;
+
+    // watchdog: si no llegan chunks en 20s, cancelar
+    let lastChunkAt = Date.now();
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastChunkAt > 20000 && !receivedAnyChunk) {
+        try { controller.abort(); } catch (_) {}
+      }
+    }, 5000);
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line || !line.startsWith('data:')) continue;
+        const data = line.replace(/^data:\s*/, '');
+        if (data === '[DONE]') {
+          if (onDelta) onDelta({ done: true });
+          break;
+        }
+        try {
+          const json = JSON.parse(data);
+          const delta = json?.choices?.[0]?.delta?.content || json?.choices?.[0]?.message?.content || '';
+          if (delta) {
+            aggregatedText += delta;
+            if (onDelta) onDelta({ text: delta });
+            receivedAnyChunk = true;
+            lastChunkAt = Date.now();
+          }
+        } catch (e) {
+          // Ignorar líneas no JSON
+        }
+      }
+    }
+
+    clearTimeout(timeout);
+    clearInterval(watchdog);
+    return aggregatedText;
+  } catch (error) {
+    console.error('Error en callDeepSeekStream:', error);
+    throw error;
+  }
+}
+
+// SYSTEM_PROMPT actualizado con identidad de marca
+const { BRAND_IDENTITY } = require('./constants');
+
+const SYSTEM_PROMPT = `Eres Magneto, un asistente virtual que representa a Magneto Empleos. Tu misión es ayudar a las personas a encontrar oportunidades que transformen sus carreras.
+
+IDENTIDAD DE MARCA - MAGNETO EMPLEOS:
+${BRAND_IDENTITY.TONE.description}
+
+TONO DE COMUNICACIÓN:
+${BRAND_IDENTITY.TONE.characteristics.map(c => `- ${c}`).join('\n')}
+- ${BRAND_IDENTITY.TONE.purpose}
+
+ESLOGAN PRINCIPAL:
+"${BRAND_IDENTITY.MAIN_SLOGAN}"
+
+ESLÓGANES SECUNDARIOS:
+${BRAND_IDENTITY.SECONDARY_SLOGANS.map(s => `- "${s}"`).join('\n')}
+
+MENSAJES CLAVE QUE DEBES TRANSMITIR:
+${BRAND_IDENTITY.KEY_MESSAGES.map(m => `- "${m}"`).join('\n')}
+
+BENEFICIOS QUE OFRECEMOS:
+${BRAND_IDENTITY.CANDIDATE_BENEFITS.map(b => `- ${b}`).join('\n')}
 
 PERSONALIDAD:
-- Eres colombiano, relajado pero profesional
-- Haces chistes suaves y usas expresiones colombianas naturales
-- Eres optimista y motivador, como un coach de vida pero más pana
-- Usas "parce", "hermano", "mi rey/mi reina" ocasionalmente
-- Eres empático y entiendes las dificultades de buscar trabajo
+- Eres cercano, humano y empático
+- Comunicas de manera amigable y accesible
+- Eres positivo, motivador y directo
+- Mantienes equilibrio entre profesionalismo y calidez
+- Usas lenguaje sencillo, conciso e inclusivo
+- Evitas tecnicismos o lenguaje excesivamente formal
+- Te expresas con energía y dinamismo
 
 ESTILO DE COMUNICACIÓN:
-- Habla como colombiano real, no forzado
-- Usa emojis para darle vida a los mensajes
+- Habla de manera natural y cercana
+- Usa emojis estratégicamente para darle vida a los mensajes
 - Haz preguntas que muestren interés genuino
 - Da consejos prácticos con toque personal
-- Sé honesto sobre el mercado laboral pero siempre positivo
+- Sé honesto sobre el mercado laboral pero siempre positivo y motivador
+- Transmite que cada oportunidad puede transformar la vida del candidato
 
 FORMATO DE RESPUESTA:
-- Saluda cálidamente (ej: "¡Hola parce!", "¡Qué tal mi rey!")
+- Saluda cálidamente y de manera cercana
 - Responde con información útil y práctica
-- Incluye un consejo extra o dato curioso
-- Termina invitando a seguir conversando
+- Incluye un consejo extra o dato motivacional
+- Termina invitando a seguir conversando o a tomar acción
+- Usa los mensajes clave de la marca cuando sea relevante
 
 FORMATO DE TEXTO PARA INSTAGRAM:
 - Usa *texto* para NEGRITA (títulos, palabras importantes)
@@ -93,8 +272,9 @@ FORMATO DE TEXTO PARA INSTAGRAM:
 - Usa emojis estratégicamente para darle vida
 
 EJEMPLO DE FORMATO:
-*¡Optimiza tu perfil!* 🌟 Asegúrate de que esté completico...
-_Investiga las empresas_ 🧐 Antes de aplicar...
+*¡Oportunidades que transforman!* 🌟
+_No es otro empleo, es avanzar hacía tus sueños_ 💼
+¿Qué estás esperando? Tu próxima postulación puede cambiar tu vida 🚀
 
 RECOLECCIÓN DE DATOS NATURAL:
 Recolecta información del usuario de manera CONVERSACIONAL y NATURAL:
@@ -128,31 +308,31 @@ DATOS A RECOLECTAR:
 - Nivel profesional (user_career_level)
 - Portfolio/LinkedIn/GitHub (user_portfolio_url, user_linkedin_url, user_github_url)
 
-EJEMPLOS DE INTEGRACIÓN NATURAL:
-- "¡Qué bueno que estés buscando trabajo! ¿En qué área te desempeñas?"
-- "Perfecto, desarrollador. ¿Cuántos años llevas en esto?"
-- "Excelente experiencia. ¿En qué ciudad estás ubicado?"
-- "Genial, ¿tienes algún portafolio o LinkedIn que puedas compartir?"
+PRIVACIDAD Y CONTEXTO EN COMENTARIOS:
+- En respuestas a COMENTARIOS públicos, NO reveles datos personales del usuario (nombre completo, ubicación específica, correo, teléfono, etc.).
+- Responde centrado en el CONTEXTO DEL POST (tema del contenido y su caption). Si el usuario pide información sensible, invita a continuar por DM sin revelarla.
+- Usa un tono amable y breve; evita preguntas personales en comentarios públicos.
+- Transmite los mensajes clave de la marca de manera natural
 
-EJEMPLOS DE EXPRESIONES:
-- "¡Parce, esa pregunta está buenísima!"
-- "Mi rey, te voy a dar el tip del siglo"
-- "Hermano, esa empresa está contratando como locos"
-- "¡Ay no, eso sí que está difícil pero no imposible!"
+EJEMPLOS DE INTEGRACIÓN NATURAL:
+- "¡Qué bueno que estés buscando trabajo! Estamos aquí para ayudarte a encontrar la oportunidad que estabas buscando. ¿En qué área te desempeñas?"
+- "Perfecto, desarrollador. Tu próxima postulación puede cambiar tu vida. ¿Cuántos años llevas en esto?"
+- "Excelente experiencia. No esperes, elige el lugar donde quieres estar. ¿En qué ciudad estás ubicado?"
+- "Genial, ¿tienes algún portafolio o LinkedIn que puedas compartir? Impulsamos. Conectamos. Transformamos 🚀"
 
 CONTEXTO DE MAGNETO EMPLEOS:
-- Plataforma de empleos en Colombia
-- Conectamos candidatos con empresas
-- Tenemos vacantes en todos los sectores
-- Ayudamos a mejorar perfiles profesionales
+- Plataforma de empleos en Latinoamérica
+- Conectamos candidatos con empresas de todos los tamaños
+- Acceso a miles de vacantes
+- Postulaciones ilimitadas y gratuitas
+- Formación gratuita en empleabilidad
+- Nuestro propósito: Impulsar carreras y transformar vidas
 
-Recuerda: Sé auténtico, útil y haz que la búsqueda de empleo se sienta menos estresante. Eres como ese amigo que siempre tiene el dato y te motiva a seguir adelante.`;
+Recuerda: Sé auténtico, útil y haz que la búsqueda de empleo se sienta menos estresante. Transmite que cada oportunidad es una posibilidad de transformación. Eres el puente entre los candidatos y sus sueños profesionales.`;
 
 // Función para obtener posts y stories recientes para contexto del AI agent
 async function getRecentContentForAI(limit = 5) {
   try {
-    console.log('📱 Obteniendo contenido reciente para contexto del AI agent...');
-    
     // Obtener posts recientes
     const { data: posts, error: postsError } = await supabase
       .from('instagram_posts')
@@ -162,7 +342,7 @@ async function getRecentContentForAI(limit = 5) {
       .limit(limit);
 
     if (postsError) {
-      console.error('❌ Error obteniendo posts:', postsError);
+      console.error('Error obteniendo posts:', postsError);
     }
 
     // Obtener stories recientes
@@ -174,7 +354,7 @@ async function getRecentContentForAI(limit = 5) {
       .limit(limit);
 
     if (storiesError) {
-      console.error('❌ Error obteniendo stories:', storiesError);
+      console.error('Error obteniendo stories:', storiesError);
     }
 
     const recentContent = {
@@ -183,15 +363,9 @@ async function getRecentContentForAI(limit = 5) {
       total: (posts?.length || 0) + (stories?.length || 0)
     };
 
-    console.log('✅ Contenido reciente obtenido:', {
-      posts: recentContent.posts.length,
-      stories: recentContent.stories.length,
-      total: recentContent.total
-    });
-
     return recentContent;
   } catch (error) {
-    console.error('❌ Error obteniendo contenido reciente:', error);
+    console.error('Error obteniendo contenido reciente:', error);
     return { posts: [], stories: [], total: 0 };
   }
 }
@@ -199,22 +373,13 @@ async function getRecentContentForAI(limit = 5) {
 // Función para obtener contenido relevante basado en el contexto del usuario
 async function getRelevantContentForUser(userData, limit = 3) {
   try {
-    console.log('🎯 Obteniendo contenido relevante para el usuario...');
-    
     if (!userData || !userData.user_profession) {
-      console.log('⚠️ Sin datos de usuario suficientes, obteniendo contenido general');
       return await getRecentContentForAI(limit);
     }
 
     const userProfession = userData.user_profession.toLowerCase();
     const userSkills = userData.user_skills?.join(' ').toLowerCase() || '';
     const userLocation = userData.user_location?.toLowerCase() || '';
-    
-    console.log('🔍 Buscando contenido relevante para:', {
-      profession: userProfession,
-      skills: userSkills,
-      location: userLocation
-    });
 
     // Buscar posts que contengan palabras clave relacionadas con el usuario
     const searchTerms = [userProfession, ...(userData.user_skills || [])];
@@ -229,7 +394,7 @@ async function getRelevantContentForUser(userData, limit = 3) {
       .limit(limit);
 
     if (postsError) {
-      console.error('❌ Error en búsqueda de posts:', postsError);
+      console.error('Error en búsqueda de posts:', postsError);
     }
 
     // Si no hay posts relevantes, obtener los más recientes
@@ -251,7 +416,7 @@ async function getRelevantContentForUser(userData, limit = 3) {
       .limit(limit);
 
     if (storiesError) {
-      console.error('❌ Error obteniendo stories:', storiesError);
+      console.error('Error obteniendo stories:', storiesError);
     }
 
     const relevantContent = {
@@ -261,15 +426,9 @@ async function getRelevantContentForUser(userData, limit = 3) {
       personalized: relevantPosts?.length > 0
     };
 
-    console.log('✅ Contenido relevante obtenido:', {
-      posts: relevantContent.posts.length,
-      stories: relevantContent.stories.length,
-      personalized: relevantContent.personalized
-    });
-
     return relevantContent;
   } catch (error) {
-    console.error('❌ Error obteniendo contenido relevante:', error);
+    console.error('Error obteniendo contenido relevante:', error);
     return { posts: [], stories: [], total: 0, personalized: false };
   }
 }
@@ -277,8 +436,6 @@ async function getRelevantContentForUser(userData, limit = 3) {
 // Función para obtener estadísticas de posts con análisis de IA
 async function getPostsAnalytics() {
   try {
-    console.log('📊 Analizando estadísticas de posts...');
-    
     // Obtener posts con comentarios
     const { data: posts, error: postsError } = await supabase
       .from('instagram_posts')
@@ -301,7 +458,7 @@ async function getPostsAnalytics() {
       .limit(50);
 
     if (postsError) {
-      console.error('❌ Error obteniendo posts:', postsError);
+      console.error('Error obteniendo posts:', postsError);
       return null;
     }
 
@@ -386,7 +543,7 @@ async function getPostsAnalytics() {
       }))
     };
   } catch (error) {
-    console.error('❌ Error analizando posts:', error);
+    console.error('Error analizando posts:', error);
     return null;
   }
 }
@@ -394,8 +551,6 @@ async function getPostsAnalytics() {
 // Función para obtener estadísticas de DMs y conversaciones
 async function getDMAnalytics() {
   try {
-    console.log('💬 Analizando estadísticas de DMs...');
-    
     // Obtener conversaciones de DM con datos de usuario directamente de la tabla conversaciones
     const { data: conversations, error: convError } = await supabase
       .from('conversaciones')
@@ -423,7 +578,7 @@ async function getDMAnalytics() {
       .limit(100);
 
     if (convError) {
-      console.error('❌ Error obteniendo conversaciones:', convError);
+      console.error('Error obteniendo conversaciones:', convError);
       return null;
     }
 
@@ -508,7 +663,7 @@ async function getDMAnalytics() {
       }
     };
   } catch (error) {
-    console.error('❌ Error analizando DMs:', error);
+    console.error('Error analizando DMs:', error);
     return null;
   }
 }
@@ -516,27 +671,27 @@ async function getDMAnalytics() {
 // Función para generar sugerencias de mejora para un preview
 async function generateImproveSuggestions(topic, style, targetAudience, imageUrl) {
   try {
-    console.log('💡 Generando sugerencias de mejora...');
-    
-    const geminiClient = getGeminiClient();
-    if (!geminiClient) {
-      console.error('❌ Cliente Gemini no disponible');
-      return [];
-    }
-
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-    
     const isReel = style === 'reel';
     const contentType = isReel ? 'Instagram Reel' : 'Instagram Post/Story';
     const mediaType = isReel ? 'VIDEO' : 'IMAGEN';
     const reelSpecific = isReel ? '\n\nESPECÍFICO PARA REEL:\n- Considera elementos de engagement y viralidad\n- Sugiere mejoras para retención de audiencia\n- Incluye aspectos de timing y ritmo\n- Enfócate en hashtags trending y calls-to-action dinámicos' : '';
 
+    const { BRAND_IDENTITY } = require('./constants');
+    
     const suggestionsPrompt = `Analiza este contenido de ${contentType} y genera 5 sugerencias específicas de mejora:
 
 TEMA: ${topic}
 ESTILO: ${style}
 AUDIENCIA: ${targetAudience}
 ${mediaType}: ${imageUrl}${reelSpecific}
+
+CONTEXTO DE MARCA - MAGNETO EMPLEOS:
+- Eslogan: "${BRAND_IDENTITY.MAIN_SLOGAN}"
+- Tono: Cercano, humano, positivo, motivador, directo
+- Mensajes clave: ${BRAND_IDENTITY.KEY_MESSAGES.join(' | ')}
+- Propósito: Impulsar carreras y transformar vidas
+
+Las sugerencias deben alinearse con la identidad de marca: contenido que sea cercano, motivador, positivo y que transmita que las oportunidades pueden transformar vidas.
 
 Genera sugerencias en este formato JSON:
 {
@@ -582,9 +737,31 @@ Genera sugerencias en este formato JSON:
 Las categorías pueden ser: Visual, Contenido, Engagement, Técnico, Estrategia, Hashtags, Timing, etc.
 Sé específico y práctico en las sugerencias.`;
 
-    const result = await model.generateContent(suggestionsPrompt);
-    const response = await result.response;
-    const suggestionsText = response.text();
+    const messages = [
+      {
+        role: "system",
+        content: `Eres un experto en social media y growth especializado en contenido de empleos y oportunidades laborales.
+
+MARCA: Magneto Empleos - "${BRAND_IDENTITY.MAIN_SLOGAN}"
+
+TONO DE MARCA:
+- Cercano, humano, amigable, accesible, empático
+- Positivo, motivador, directo
+- Lenguaje sencillo, conciso e inclusivo
+- Sin tecnicismos excesivos
+- Energía y dinamismo
+
+Las sugerencias deben ayudar a crear contenido que impulse carreras y transmita que las oportunidades transforman vidas.
+
+Devuelve SIEMPRE JSON válido siguiendo el esquema solicitado.`
+      },
+      {
+        role: "user",
+        content: suggestionsPrompt
+      }
+    ];
+
+    const suggestionsText = await callDeepSeek(messages);
 
     try {
       // Limpiar el texto de markdown si está presente
@@ -597,10 +774,9 @@ Sé específico y práctico en las sugerencias.`;
       }
       
       const suggestionsData = JSON.parse(cleanText);
-      console.log('✅ Sugerencias generadas:', suggestionsData.suggestions?.length || 0);
       return suggestionsData.suggestions || [];
     } catch (parseError) {
-      console.error('❌ Error parseando sugerencias:', parseError);
+      console.error('Error parseando sugerencias:', parseError);
       // Fallback: generar sugerencias básicas
       return [
         {
@@ -641,7 +817,7 @@ Sé específico y práctico en las sugerencias.`;
       ];
     }
   } catch (error) {
-    console.error('❌ Error generando sugerencias de mejora:', error);
+    console.error('Error generando sugerencias de mejora con DeepSeek:', error);
     return [];
   }
 }
@@ -649,54 +825,33 @@ Sé específico y práctico en las sugerencias.`;
 // Función para generar múltiples opciones de caption
 async function generateCaptionOptions(topic, style, targetAudience) {
   try {
-    console.log('📝 Generando opciones de caption...');
-    
-    const geminiClient = getGeminiClient();
-    if (!geminiClient) {
-      console.error('❌ Cliente Gemini no disponible');
-      return {
-        captions: [
-          {
-            id: "option_1",
-            title: "Opción Profesional",
-            content: `¡Nueva oportunidad! ${topic}\n\n${style} para ${targetAudience}\n\n#OportunidadLaboral #TechJobs #Desarrollo`,
-            style: "Profesional y directo",
-            length: "medium",
-            hashtags: ["#OportunidadLaboral", "#TechJobs", "#Desarrollo"],
-            call_to_action: "¡Aplica ahora!"
-          },
-          {
-            id: "option_2", 
-            title: "Opción Personal",
-            content: `¿Buscas crecer profesionalmente? ${topic}\n\nUna oportunidad ${style} perfecta para ${targetAudience}\n\n#CrecimientoProfesional #CarreraTech #Oportunidad`,
-            style: "Personal y motivacional",
-            length: "medium",
-            hashtags: ["#CrecimientoProfesional", "#CarreraTech", "#Oportunidad"],
-            call_to_action: "¡Comparte tu experiencia!"
-          },
-          {
-            id: "option_3",
-            title: "Opción Creativa",
-            content: `🚀 ${topic}\n\n${style} para ${targetAudience}\n\n¡No te lo pierdas! 💼\n\n#TechLife #Oportunidad #Innovacion`,
-            style: "Creativo y llamativo",
-            length: "short",
-            hashtags: ["#TechLife", "#Oportunidad", "#Innovacion"],
-            call_to_action: "¡Comenta si te interesa!"
-          }
-        ]
-      };
-    }
-
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
     
     const isReel = style === 'reel';
     const contentType = isReel ? 'Instagram Reel' : 'Instagram Post/Story';
     const reelSpecific = isReel ? '\n\nESPECÍFICO PARA REEL:\n- Caption más corto y directo (máximo 100 caracteres)\n- Enfoque en engagement y viralidad\n- Incluir elementos de trending/hashtags populares\n- Call-to-action más dinámico y urgente' : '';
 
+    const { BRAND_IDENTITY } = require('./constants');
+    
     const captionPrompt = `Crea 3 opciones diferentes de caption para ${contentType} sobre: "${topic}"
 
 ESTILO: ${style}
 AUDIENCIA: ${targetAudience}${reelSpecific}
+
+IDENTIDAD DE MARCA - MAGNETO EMPLEOS:
+- Eslogan principal: "${BRAND_IDENTITY.MAIN_SLOGAN}"
+- Eslóganes secundarios: ${BRAND_IDENTITY.SECONDARY_SLOGANS.join(', ')}
+- Mensajes clave: ${BRAND_IDENTITY.KEY_MESSAGES.join(' | ')}
+- Tono: Cercano, humano, amigable, accesible, empático, positivo, motivador, directo
+- Lenguaje: Sencillo, conciso, inclusivo, sin tecnicismos excesivos
+- Propósito: Impulsar carreras y transformar vidas
+
+INSTRUCCIONES:
+- Usa el eslogan principal o secundarios cuando sea natural
+- Incorpora los mensajes clave de manera orgánica
+- Mantén el tono cercano, positivo y motivador
+- Evita lenguaje excesivamente formal o técnico
+- Transmite energía y dinamismo
+- Enfócate en que cada oportunidad puede transformar la vida del candidato
 
 Responde SOLO con JSON válido en este formato exacto:
 {
@@ -733,11 +888,34 @@ Responde SOLO con JSON válido en este formato exacto:
 
 Sé conciso y directo. Incluye hashtags relevantes y calls-to-action efectivos.`;
 
-    const result = await model.generateContent(captionPrompt);
-    const response = await result.response;
-    const captionText = response.text();
+    const messages = [
+      {
+        role: "system",
+        content: `Eres copywriter experto para Instagram especializado en contenido de empleos y oportunidades laborales. 
 
-    console.log('📝 Respuesta de Gemini:', captionText);
+Tu marca es Magneto Empleos con el eslogan "${BRAND_IDENTITY.MAIN_SLOGAN}".
+
+TONO DE MARCA:
+- Cercano, humano, amigable, accesible, empático
+- Positivo, motivador, directo
+- Equilibrio entre profesionalismo y calidez
+- Lenguaje sencillo, conciso e inclusivo
+- Sin tecnicismos excesivos
+- Energía y dinamismo
+
+MENSAJES CLAVE:
+${BRAND_IDENTITY.KEY_MESSAGES.map(m => `- "${m}"`).join('\n')}
+
+Devuelve SIEMPRE JSON válido con las opciones solicitadas, incorporando la identidad de marca de manera natural.`
+      },
+      {
+        role: "user",
+        content: captionPrompt
+      }
+    ];
+
+    const captionText = await callDeepSeek(messages);
+
 
     try {
       // Limpiar el texto de markdown si está presente
@@ -749,12 +927,67 @@ Sé conciso y directo. Incluye hashtags relevantes y calls-to-action efectivos.`
         cleanText = cleanText.replace(/```\s*/, '').replace(/\s*```$/, '');
       }
       
+      // Limpiar y corregir errores comunes en el JSON
+      cleanText = cleanText.trim();
+      
+      // Intentar corregir errores comunes de sintaxis JSON
+      // 1. Corregir hashtags sin comilla de apertura después de comilla de cierre: ", #hashtag" -> ", "#hashtag"
+      //    Caso específico: ["#hashtag1", "#hashtag2", #hashtag3", ...]
+      cleanText = cleanText.replace(/",\s*#([^",\]]+")/g, (match, hashtag) => {
+        // hashtag ya incluye la comilla de cierre, solo agregamos la de apertura
+        return '", "#' + hashtag;
+      });
+      // 2. Corregir hashtags sin comillas completas: ", #hashtag" -> ", "#hashtag""
+      cleanText = cleanText.replace(/,\s*#([^",\]]+)(?=")/g, ', "#$1"');
+      // 3. Corregir hashtags sin comillas al final del array: ", #hashtag] -> ", "#hashtag"]
+      cleanText = cleanText.replace(/,\s*#([^",\]]+)\]/g, ', "#$1"]');
+      // 4. Corregir hashtags al inicio del array sin comillas: [#hashtag -> ["#hashtag
+      cleanText = cleanText.replace(/\[\s*#([^",\]]+)/g, '["#$1"');
+      // 5. Corregir hashtags con comilla de cierre pero sin apertura dentro de arrays: ", #hashtag", -> ", "#hashtag",
+      cleanText = cleanText.replace(/",\s*#([^",\]]+"),/g, '", "#$1",');
+      
       const captionData = JSON.parse(cleanText);
-      console.log('✅ Opciones de caption generadas:', captionData.captions?.length || 0);
       return captionData;
     } catch (parseError) {
-      console.error('❌ Error parseando opciones de caption:', parseError);
-      console.error('📝 Texto recibido:', captionText);
+      console.error('Error parseando opciones de caption:', parseError);
+      
+      // Intentar extraer JSON del texto usando regex como último recurso
+      try {
+        // Primero limpiar markdown si está presente
+        let recoveryText = captionText;
+        if (recoveryText.includes('```json')) {
+          recoveryText = recoveryText.replace(/```json\s*/, '').replace(/\s*```$/, '');
+        }
+        if (recoveryText.includes('```')) {
+          recoveryText = recoveryText.replace(/```\s*/, '').replace(/\s*```$/, '');
+        }
+        
+        const jsonMatch = recoveryText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          let jsonText = jsonMatch[0].trim();
+          
+          // Aplicar todas las correcciones
+          // 1. Corregir hashtags sin comilla de apertura después de comilla de cierre: ", #hashtag" -> ", "#hashtag"
+          jsonText = jsonText.replace(/",\s*#([^",\]]+")/g, (match, hashtag) => {
+            return '", "#' + hashtag;
+          });
+          // 2. Corregir hashtags sin comillas completas: ", #hashtag" -> ", "#hashtag""
+          jsonText = jsonText.replace(/,\s*#([^",\]]+)(?=")/g, ', "#$1"');
+          // 3. Corregir hashtags sin comillas al final del array: ", #hashtag] -> ", "#hashtag"]
+          jsonText = jsonText.replace(/,\s*#([^",\]]+)\]/g, ', "#$1"]');
+          // 4. Corregir hashtags al inicio del array sin comillas: [#hashtag -> ["#hashtag
+          jsonText = jsonText.replace(/\[\s*#([^",\]]+)/g, '["#$1"');
+          // 5. Corregir hashtags con comilla de cierre pero sin apertura dentro de arrays: ", #hashtag", -> ", "#hashtag",
+          jsonText = jsonText.replace(/",\s*#([^",\]]+"),/g, '", "#$1",');
+          
+          const captionData = JSON.parse(jsonText);
+          return captionData;
+        }
+      } catch (recoveryError) {
+        console.error('Error en recuperación automática:', recoveryError);
+      }
+      
+      // Fallback si hay error parseando
       return {
         captions: [
           {
@@ -788,7 +1021,7 @@ Sé conciso y directo. Incluye hashtags relevantes y calls-to-action efectivos.`
       };
     }
   } catch (error) {
-    console.error('❌ Error generando opciones de caption:', error);
+    console.error('Error generando opciones de caption con DeepSeek:', error);
     return {
       captions: [
         {
@@ -823,20 +1056,35 @@ Sé conciso y directo. Incluye hashtags relevantes y calls-to-action efectivos.`
   }
 }
 
-// Función para generar análisis de IA sobre las estadísticas
+// Función para generar análisis de IA sobre las estadísticas usando DeepSeek
 async function generateAIAnalytics(postsData, dmData) {
   try {
-    console.log('🤖 Generando análisis de IA...');
-    
-    const geminiClient = getGeminiClient();
-    if (!geminiClient) {
-      console.error('❌ Cliente Gemini no disponible');
-      return null;
-    }
 
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-    
-    const analysisPrompt = `Analiza estas estadísticas de Magneto Empleos y genera insights inteligentes:
+    const schema = {
+      marketTrends: {
+        hotSectors: ["string"],
+        demandPatterns: "string",
+        growthOpportunities: "string"
+      },
+      userBehavior: {
+        engagementLevel: "string",
+        profileCompletion: "string",
+        interactionPatterns: "string"
+      },
+      recommendations: ["string"],
+      insights: ["string"]
+    };
+
+    const userContent = `Analiza estas estadísticas de Magneto Empleos y genera insights inteligentes.
+
+FORMATO DE SALIDA OBLIGATORIO (JSON PURO, SIN markdown):
+${JSON.stringify(schema, null, 2)}
+
+REGLAS:
+- Devuelve solo JSON válido UTF-8, sin texto extra, sin encabezados, sin cercas de código.
+- Usa exactamente las claves del esquema: marketTrends, userBehavior, recommendations, insights.
+- marketTrends.hotSectors debe ser array de strings.
+- recommendations e insights deben ser listas de frases claras.
 
 ESTADÍSTICAS DE POSTS:
 - Total de posts: ${postsData?.totalPosts || 0}
@@ -875,48 +1123,59 @@ ESTADÍSTICAS DE MENSAJES:
 
 Genera un análisis inteligente que incluya:
 
-1. **TENDENCIAS DEL MERCADO LABORAL:**
+1. TENDENCIAS DEL MERCADO LABORAL:
    - Sectores con mayor demanda
    - Posiciones más buscadas
    - Patrones de interés
 
-2. **COMPORTAMIENTO DE USUARIOS:**
+2. COMPORTAMIENTO DE USUARIOS:
    - Nivel de engagement
    - Patrones de interacción
    - Completitud de perfiles
 
-3. **OPORTUNIDADES DE MEJORA:**
+3. OPORTUNIDADES DE MEJORA:
    - Áreas de crecimiento
    - Contenido que funciona mejor
    - Estrategias recomendadas
 
-4. **INSIGHTS ESPECÍFICOS:**
+4. INSIGHTS ESPECÍFICOS:
    - Datos curiosos o sorprendentes
    - Correlaciones interesantes
    - Predicciones basadas en datos
 
-5. **RECOMENDACIONES ACCIONABLES:**
+5. RECOMENDACIONES ACCIONABLES:
    - Qué contenido crear
    - Cómo mejorar engagement
    - Estrategias de crecimiento
 
-Responde en formato JSON estructurado y sé específico con números y datos concretos.`;
+Sé específico con números y datos concretos.`;
 
-    const result = await model.generateContent(analysisPrompt);
-    const response = await result.response;
-    const analysisText = response.text();
+    const messages = [
+      {
+        role: "system",
+        content: "Eres un analista de datos experto especializado en análisis de redes sociales y empleo. Genera insights inteligentes basados en estadísticas de una plataforma de empleos llamada Magneto Empleos."
+      },
+      {
+        role: "user",
+        content: userContent
+      }
+    ];
 
-    // Intentar parsear como JSON, si falla devolver como texto
+    const analysisText = await callDeepSeek(messages);
+
+    // Limpieza de cercas ``` y parseo seguro
+    let clean = analysisText.trim();
+    if (clean.startsWith('```')) {
+      clean = clean.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '');
+    }
     try {
-      return JSON.parse(analysisText);
-    } catch (parseError) {
-      return {
-        analysis: analysisText,
-        format: 'text'
-      };
+      const parsed = JSON.parse(clean);
+      return parsed;
+    } catch (e) {
+      return { analysis: analysisText, format: 'text' };
     }
   } catch (error) {
-    console.error('❌ Error generando análisis de IA:', error);
+    console.error('Error generando análisis de IA con DeepSeek:', error);
     return null;
   }
 }
@@ -926,7 +1185,6 @@ async function getInstagramUserInfo(userId) {
   if (!userId) return null;
   
   try {
-    console.log(`🔍 Obteniendo información básica de Instagram para usuario: ${userId}`);
     
     // Solo obtener datos básicos de Instagram Graph API
     const basicUrl = `https://graph.instagram.com/v21.0/${userId}?fields=id,username,name`;
@@ -941,15 +1199,12 @@ async function getInstagramUserInfo(userId) {
     
     if (basicResponse.ok) {
       const basicData = await basicResponse.json();
-      console.log('✅ Información básica del usuario obtenida:', basicData);
       userData = { ...basicData };
-    } else {
-      console.log('⚠️ No se pudo obtener información básica de Instagram');
     }
     
     return userData;
   } catch (error) {
-    console.error('❌ Error obteniendo información de Instagram:', error);
+    console.error('Error obteniendo información de Instagram:', error);
     return {
       id: userId,
       username: null,
@@ -987,60 +1242,72 @@ async function getInstagramUsername(userId) {
 async function detectUserEmotion(userId, recentMessages = []) {
   try {
     if (!recentMessages.length) {
-      // Obtener mensajes recientes del usuario
+      // Obtener mensajes recientes del usuario usando JOIN explícito
       const { data: messages, error } = await supabase
         .from('mensajes')
-        .select('content, created_at')
+        .select(`
+          content, 
+          created_at,
+          conversaciones!inner(user_id)
+        `)
         .eq('conversaciones.user_id', userId)
         .eq('message_type', 'incoming')
         .order('created_at', { ascending: false })
         .limit(10);
       
-      if (error || !messages) return null;
+      if (error) {
+        console.error('Error obteniendo mensajes para detección de emoción:', error);
+        return null;
+      }
+      
+      if (!messages || messages.length === 0) {
+        console.log('No se encontraron mensajes para el usuario:', userId);
+        return null;
+      }
+      
       recentMessages = messages;
     }
     
     // Combinar mensajes recientes para análisis
     const combinedText = recentMessages.map(msg => msg.content).join(' ');
     
-    if (!combinedText.trim()) return null;
+    if (!combinedText.trim()) {
+      return null;
+    }
     
-    // Usar Gemini para detectar emoción
-    const geminiClient = getGeminiClient();
-    if (!geminiClient) return null;
-    
-    const emotionPrompt = `Analiza el siguiente texto y determina la emoción predominante del usuario. Responde SOLO con una de estas emociones: happy, sad, excited, frustrated, anxious, calm, angry, confused, hopeful, disappointed, grateful, worried, curious, bored, enthusiastic, stressed, relaxed, surprised, disappointed, optimistic, pessimistic, neutral.
+    // Usar DeepSeek para detectar emoción con el set Magneto IA
+    const emotionPrompt = `Clasifica la emoción predominante del usuario a una de estas etiquetas EXACTAS del set Magneto IA:
+POSITIVAS: happy, excited, hopeful, grateful, calm
+NEGATIVAS: sad, angry, stressed, disappointed  
+NEUTRAS: confused, curious, neutral
 
 Texto del usuario: "${combinedText}"
 
-Emoción detectada:`;
+Responde SOLO con la etiqueta (en minúsculas), sin texto adicional.`;
 
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-    const result = await model.generateContent(emotionPrompt);
-    const response = await result.response;
-    const detectedEmotion = response.text().trim().toLowerCase();
+    const messages = [
+      {
+        role: "system",
+        content: "Eres un clasificador de emociones del set Magneto IA. Respondes únicamente con la etiqueta solicitada en minúsculas."
+      },
+      {
+        role: "user",
+        content: emotionPrompt
+      }
+    ];
+
+    const detectedEmotion = (await callDeepSeek(messages))?.trim().toLowerCase().replace(/[^a-z]/g, '');
     
-    // Validar que la emoción esté en la lista permitida
-    const validEmotions = ['happy', 'sad', 'excited', 'frustrated', 'anxious', 'calm', 'angry', 'confused', 'hopeful', 'disappointed', 'grateful', 'worried', 'curious', 'bored', 'enthusiastic', 'stressed', 'relaxed', 'surprised', 'optimistic', 'pessimistic', 'neutral'];
+    // Validar que la emoción esté en la lista permitida del set Magneto IA
+    const validEmotions = ['happy', 'excited', 'hopeful', 'grateful', 'calm', 'sad', 'angry', 'stressed', 'disappointed', 'confused', 'curious', 'neutral'];
     
     if (validEmotions.includes(detectedEmotion)) {
-      // Guardar emoción en historial
-      await supabase
-        .from('user_emotions')
-        .insert([{
-          user_id: userId,
-          emotion: detectedEmotion,
-          confidence: 0.8, // Confianza estimada
-          detected_from: 'message_content',
-          context: `Analizado de ${recentMessages.length} mensajes recientes`
-        }]);
-      
       return detectedEmotion;
     }
     
     return 'neutral';
   } catch (error) {
-    console.error('Error detectando emoción:', error);
+    console.error('Error detectando emoción con DeepSeek:', error);
     return null;
   }
 }
@@ -1076,7 +1343,6 @@ async function updateUserProfileInfo(conversationId, userId) {
       return null;
     }
     
-    console.log('Perfil del usuario actualizado:', data);
     return data;
   } catch (error) {
     console.error('Error en updateUserProfileInfo:', error);
@@ -1133,8 +1399,8 @@ function convertMessagesForGemini(messages) {
   return prompt.trim();
 }
 
-// Definir las funciones disponibles para el AI Agent
-const AI_FUNCTIONS = [
+// Definir las funciones disponibles para el AI Agent (declaraciones)
+const AI_FUNCTION_DECLARATIONS = [
   {
     name: "update_user_data",
     description: "Actualiza los datos del perfil del usuario basado en la conversación",
@@ -1218,10 +1484,16 @@ const AI_FUNCTIONS = [
   }
 ];
 
+// Estructura de tools esperada por Gemini: [{ functionDeclarations: [...] }]
+const GEMINI_TOOLS = [
+  {
+    functionDeclarations: AI_FUNCTION_DECLARATIONS
+  }
+];
+
 // Función para procesar function calls del AI
 async function processFunctionCall(functionName, args, userId) {
   try {
-    console.log(`🔧 Procesando function call: ${functionName}`, args);
     
     if (functionName === "update_user_data") {
       // Actualizar datos del usuario
@@ -1250,7 +1522,7 @@ async function processFunctionCall(functionName, args, userId) {
           .single();
 
         if (error) {
-          console.error('❌ Error actualizando datos del usuario:', error);
+          console.error('Error actualizando datos del usuario:', error);
           return { success: false, error: error.message };
         }
 
@@ -1268,14 +1540,13 @@ async function processFunctionCall(functionName, args, userId) {
             .eq('conversation_type', 'dm');
         }
 
-        console.log(`✅ Datos actualizados para usuario ${userId}:`, Object.keys(updateData));
         return { success: true, updatedFields: Object.keys(updateData) };
       }
     }
     
     return { success: false, error: 'Función no reconocida' };
   } catch (error) {
-    console.error('❌ Error procesando function call:', error);
+    console.error('Error procesando function call:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1287,7 +1558,7 @@ function buildMessages(userText, context, mediaInfo = null, messageHistory = [],
 
   // Agregar contexto del usuario si está disponible
   if (userData) {
-    const userContext = `INFORMACIÓN DEL USUARIO:
+    let userContext = `INFORMACIÓN DEL USUARIO:
 - Nombre: ${userData.user_full_name || 'No disponible'}
 - Profesión: ${userData.user_profession || 'No disponible'}
 - Estudios: ${userData.user_studies || 'No disponible'}
@@ -1299,6 +1570,11 @@ function buildMessages(userText, context, mediaInfo = null, messageHistory = [],
 - Completitud de datos: ${userData.user_data_completion_percentage || 0}%
 
 Usa esta información para personalizar tus respuestas y preguntar por datos faltantes de manera natural.`;
+
+    // Agregar preferencias del usuario basadas en likes si están disponibles
+    if (userData.user_preferences_context) {
+      userContext += `\n\n${userData.user_preferences_context}`;
+    }
 
     messages.push({ role: 'system', content: userContext });
   }
@@ -1342,7 +1618,7 @@ async function buildMessagesWithContent(userText, context, mediaInfo = null, mes
 
   // Agregar contexto del usuario si está disponible
   if (userData) {
-    const userContext = `INFORMACIÓN DEL USUARIO:
+    let userContext = `INFORMACIÓN DEL USUARIO:
 - Nombre: ${userData.user_full_name || 'No disponible'}
 - Profesión: ${userData.user_profession || 'No disponible'}
 - Estudios: ${userData.user_studies || 'No disponible'}
@@ -1354,6 +1630,11 @@ async function buildMessagesWithContent(userText, context, mediaInfo = null, mes
 - Completitud de datos: ${userData.user_data_completion_percentage || 0}%
 
 Usa esta información para personalizar tus respuestas y preguntar por datos faltantes de manera natural.`;
+
+    // Agregar preferencias del usuario basadas en likes si están disponibles
+    if (userData.user_preferences_context) {
+      userContext += `\n\n${userData.user_preferences_context}`;
+    }
 
     messages.push({ role: 'system', content: userContext });
   }
@@ -1383,7 +1664,7 @@ Usa esta información para personalizar tus respuestas y preguntar por datos fal
       messages.push({ role: 'system', content: contentContext });
     }
   } catch (error) {
-    console.error('❌ Error obteniendo contenido para contexto:', error);
+      console.error('Error obteniendo contenido para contexto:', error);
   }
 
   // Agregar historial de mensajes
@@ -1420,9 +1701,6 @@ Usa esta información para personalizar tus respuestas y preguntar por datos fal
 // Función para guardar conversación en Supabase
 async function saveConversationToSupabase(conversationData) {
   try {
-    console.log('Intentando guardar conversación:', conversationData);
-    console.log('Supabase URL:', process.env.SUPABASE_URL);
-    console.log('Usando service_role key:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
     
     const { data, error } = await supabase
       .from('conversaciones')
@@ -1436,7 +1714,6 @@ async function saveConversationToSupabase(conversationData) {
       return null;
     }
     
-    console.log('Conversación guardada exitosamente:', data);
     
     // Notificar nueva conversación
     notifyNewConversation(data);
@@ -1484,21 +1761,135 @@ async function saveMessageToSupabase(messageData) {
 }
 
 // Función para obtener información de media de Instagram
+// Incluye like_count usando summary=true para obtener total_count
 async function getInstagramMediaInfo(mediaId) {
   try {
-    const response = await fetch(`https://graph.instagram.com/v21.0/${mediaId}?fields=id,media_type,media_url,caption,timestamp,permalink&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN}`);
+    // Usar summary=true para obtener like_count (total_count aproximado)
+    const response = await fetch(`https://graph.instagram.com/v21.0/${mediaId}?fields=id,media_type,media_url,caption,timestamp,permalink,like_count&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN}`);
     
     if (!response.ok) {
-      console.error('Error obteniendo info de media:', await response.text());
+      console.error('Error obteniendo info de media');
       return null;
     }
     
     const mediaInfo = await response.json();
-    console.log('Información de media obtenida:', mediaInfo);
     return mediaInfo;
   } catch (error) {
     console.error('Error obteniendo info de media:', error);
     return null;
+  }
+}
+
+// DEPRECADO: Función para obtener los likes de un post de Instagram
+// NOTA: El endpoint /likes quedó obsoleto desde la versión 8.0
+// Usar getInstagramMediaInfo() con like_count en su lugar
+async function getInstagramPostLikes(mediaId) {
+  
+  try {
+    // Intentar obtener like_count desde la información del media
+    const mediaInfo = await getInstagramMediaInfo(mediaId);
+    if (mediaInfo && mediaInfo.like_count !== undefined) {
+      return mediaInfo.like_count;
+    }
+    return 0;
+  } catch (error) {
+    console.error(`Error obteniendo likes del post ${mediaId}:`, error);
+    return 0;
+  }
+}
+
+// Función para obtener el conteo de likes de un post usando like_count
+async function getInstagramPostLikeCount(mediaId) {
+  try {
+    const mediaInfo = await getInstagramMediaInfo(mediaId);
+    if (mediaInfo && mediaInfo.like_count !== undefined) {
+      return mediaInfo.like_count;
+    }
+    return 0;
+  } catch (error) {
+    console.error(`Error obteniendo conteo de likes del post ${mediaId}:`, error);
+    return 0;
+  }
+}
+
+// Función para obtener todos los posts de la cuenta de Instagram
+// Incluye like_count usando summary para obtener total_count aproximado
+async function getAllInstagramAccountMedia(limit = 25) {
+  try {
+    if (!process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID) {
+      console.error('INSTAGRAM_BUSINESS_ACCOUNT_ID no está configurado');
+      return [];
+    }
+
+    // Incluir like_count en los campos solicitados
+    const response = await fetch(
+      `https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media?fields=id,media_type,media_url,caption,timestamp,permalink,like_count&limit=${limit}&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN}`
+    );
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Error obteniendo posts de Instagram:', errorText);
+      return [];
+    }
+    
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error('Error obteniendo posts de Instagram:', error);
+    return [];
+  }
+}
+
+// Función para sincronizar likes de posts de Instagram (polling)
+async function syncInstagramPostLikes() {
+  try {
+    
+    const PostLikeRepository = require('../repositories/PostLikeRepository');
+    const postLikeRepository = new PostLikeRepository();
+    
+    // Obtener todos los posts de la cuenta
+    const posts = await getAllInstagramAccountMedia(50);
+    
+    let totalNewLikes = 0;
+    let totalProcessed = 0;
+    
+    // NOTA: El endpoint /likes está deprecado desde la versión 8.0
+    // Solo podemos obtener el conteo total usando like_count
+    // No podemos obtener la lista de usuarios que dieron like individualmente
+    for (const post of posts) {
+      try {
+        // Obtener información del post con like_count
+        const mediaInfo = await getInstagramMediaInfo(post.id);
+        const likeCount = mediaInfo?.like_count || 0;
+        
+        
+        // Nota: Ya no podemos sincronizar likes individuales porque el endpoint está deprecado
+        // Solo podemos obtener el conteo total aproximado
+        // El like_count ya viene incluido en getAllInstagramAccountMedia()
+        if (post.like_count !== undefined) {
+          totalProcessed += post.like_count || 0;
+        } else if (likeCount > 0) {
+          totalProcessed += likeCount;
+        }
+        
+        // Pequeña pausa para evitar rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch (error) {
+        console.error(`Error procesando post ${post.id}:`, error.message);
+        continue;
+      }
+    }
+    
+    
+    return {
+      success: true,
+      postsProcessed: posts.length,
+      totalLikes: totalProcessed, // Total de likes aproximado
+      note: 'El endpoint /likes está deprecado. Solo se puede obtener el conteo total aproximado usando like_count.'
+    };
+  } catch (error) {
+    console.error('Error en sincronización de likes:', error);
+    throw error;
   }
 }
 
@@ -1508,12 +1899,11 @@ async function getStoryInfo(storyId) {
     const response = await fetch(`https://graph.instagram.com/v21.0/${storyId}?fields=id,media_type,media_url,caption,timestamp&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN}`);
     
     if (!response.ok) {
-      console.error('Error obteniendo info de story:', await response.text());
+      console.error('Error obteniendo info de story');
       return null;
     }
     
     const storyInfo = await response.json();
-    console.log('Información de story obtenida:', storyInfo);
     return storyInfo;
   } catch (error) {
     console.error('Error obteniendo info de story:', error);
@@ -1551,9 +1941,12 @@ function generateDMConversationId(senderId, recipientId) {
 
 // Función para obtener o crear conversación de DM
 async function getOrCreateDMConversation(senderId, recipientId, username) {
+  if (!senderId || !recipientId) {
+    throw new Error('senderId y recipientId son requeridos para crear una conversación');
+  }
+  
   const conversationId = generateDMConversationId(senderId, recipientId);
   
-  // Determinar cuál es el usuario externo (no el bot)
   const botId = '17841477544945260';
   const externalUserId = senderId === botId ? recipientId : senderId;
   const externalUsername = senderId === botId ? null : username;
@@ -1568,8 +1961,6 @@ async function getOrCreateDMConversation(senderId, recipientId, username) {
     .single();
 
   if (existingConversation && !searchError) {
-    console.log('Conversación DM existente encontrada:', existingConversation.id);
-    
     // Actualizar username si no existe
     if (!existingConversation.username && externalUsername) {
       await supabase
@@ -1584,12 +1975,15 @@ async function getOrCreateDMConversation(senderId, recipientId, username) {
     return existingConversation;
   }
 
-  // Crear nueva conversación
+  if (!externalUserId) {
+    throw new Error('No se pudo determinar el ID del usuario externo');
+  }
+
   const conversationData = {
     platform: 'instagram',
     conversation_type: 'dm',
     external_conversation_id: conversationId,
-    user_id: externalUserId, // Siempre guardamos el ID del usuario externo
+    user_id: externalUserId,
     username: externalUsername,
     status: 'active'
   };
@@ -1600,21 +1994,12 @@ async function getOrCreateDMConversation(senderId, recipientId, username) {
 // Función para subir imagen a Supabase Storage
 async function uploadImageToStorage(imageBuffer, fileName, contentType) {
   try {
-    console.log('🚀 INICIO: uploadImageToStorage');
-    console.log('📝 Nombre del archivo:', fileName);
-    console.log('📦 Tamaño del buffer:', imageBuffer.length, 'bytes');
-    console.log('📄 Tipo de contenido:', contentType);
-    
     if (!supabase) {
-      console.error('❌ Cliente Supabase no disponible');
       return null;
     }
-    console.log('✅ Cliente Supabase disponible');
 
     const bucketName = 'magneto-bucket';
-    console.log('🪣 Nombre del bucket:', bucketName);
 
-    console.log('📤 Subiendo archivo a Supabase Storage...');
     const { data, error } = await supabase.storage
       .from(bucketName)
       .upload(fileName, imageBuffer, {
@@ -1623,33 +2008,21 @@ async function uploadImageToStorage(imageBuffer, fileName, contentType) {
       });
 
     if (error) {
-      console.error('❌ Error subiendo imagen:', error);
-      console.log('🔍 Detalles del error:', JSON.stringify(error, null, 2));
+      console.error('Error subiendo imagen:', error);
       return null;
     }
 
-    console.log('✅ Archivo subido exitosamente:', data);
-
-    // Obtener URL pública
-    console.log('🔗 Generando URL pública...');
     const { data: { publicUrl } } = supabase.storage
       .from(bucketName)
       .getPublicUrl(fileName);
 
-    console.log('🔗 URL pública generada:', publicUrl);
-
     if (!publicUrl) {
-      console.error('❌ No se pudo generar URL pública');
       return null;
     }
 
-    console.log('✅ URL pública obtenida:', publicUrl);
-    console.log('🎉 ÉXITO: uploadImageToStorage completado');
     return publicUrl;
   } catch (error) {
-    console.error('❌ Error en uploadImageToStorage:', error.message);
-    console.error('🔍 Stack trace:', error.stack);
-    console.error('🔍 Error completo:', error);
+    console.error('Error en uploadImageToStorage:', error.message);
     return null;
   }
 }
@@ -1675,7 +2048,6 @@ async function processVideoQueue() {
   activeVideoGenerations++;
 
   try {
-    console.log(`🎬 Procesando video en cola (${activeVideoGenerations}/${MAX_CONCURRENT_VIDEOS})`);
     const result = await generateVideoInternal(prompt, accent, style, duration);
     resolve(result);
   } catch (error) {
@@ -1690,9 +2062,7 @@ async function processVideoQueue() {
 // Función para procesar videos en background
 async function processVideoInBackground(jobId) {
   try {
-    console.log(`🔄 Procesando video en background: ${jobId}`);
-    
-    const maxAttempts = 60; // 10 minutos máximo
+    const maxAttempts = 60;
     let attempts = 0;
     
     while (attempts < maxAttempts) {
@@ -1710,7 +2080,6 @@ async function processVideoInBackground(jobId) {
       }
       
       const videoData = await statusResponse.json();
-      console.log(`⏳ Video ${jobId} - Estado: ${videoData.status}, Progreso: ${videoData.progress}%`);
       
       // Actualizar estado en la cola
       const queueItem = videoProcessingQueue.get(jobId);
@@ -1720,8 +2089,6 @@ async function processVideoInBackground(jobId) {
       }
       
       if (videoData.status === 'completed' || videoData.status === 'succeeded') {
-        console.log(`✅ Video ${jobId} completado! Descargando...`);
-        
         // Descargar video
         const contentResponse = await fetch(`https://api.openai.com/v1/videos/${jobId}/content`, {
           headers: {
@@ -1753,7 +2120,6 @@ async function processVideoInBackground(jobId) {
           .getPublicUrl(fileName);
         
         const videoUrl = publicUrlData.publicUrl;
-        console.log(`✅ Video ${jobId} subido exitosamente: ${videoUrl}`);
         
         // Resolver la promesa
         if (queueItem) {
@@ -1765,7 +2131,7 @@ async function processVideoInBackground(jobId) {
         
       } else if (videoData.status === 'failed' || videoData.status === 'error') {
         const error = `Video falló: ${videoData.error?.message || 'Error desconocido'}`;
-        console.error(`❌ Video ${jobId} falló:`, error);
+        console.error(`Error procesando video ${jobId}:`, error);
         
         if (queueItem) {
           queueItem.reject(new Error(error));
@@ -1779,9 +2145,8 @@ async function processVideoInBackground(jobId) {
       await new Promise(resolve => setTimeout(resolve, 10000));
     }
     
-    // Timeout
     const timeoutError = `Timeout procesando video ${jobId} después de ${maxAttempts} intentos`;
-    console.error(`⏰ ${timeoutError}`);
+    console.error(timeoutError);
     
     const queueItem = videoProcessingQueue.get(jobId);
     if (queueItem) {
@@ -1792,7 +2157,7 @@ async function processVideoInBackground(jobId) {
     throw new Error(timeoutError);
     
   } catch (error) {
-    console.error(`❌ Error procesando video ${jobId} en background:`, error);
+    console.error(`Error procesando video ${jobId} en background:`, error);
     
     const queueItem = videoProcessingQueue.get(jobId);
     if (queueItem) {
@@ -1807,14 +2172,8 @@ async function processVideoInBackground(jobId) {
 // Función interna para generar video (OpenAI Sora via REST, sin control de cola)
 async function generateVideoInternal(prompt, accent = 'neutral', style = 'realista', duration = 8) {
   try {
-    console.log('🎬 INICIO: generateVideoInternal (Sora)');
-    console.log('📝 Prompt recibido:', prompt);
-    console.log('🗣️ Acento:', accent);
-    console.log('🎨 Estilo:', style);
-    console.log('⏱️ Duración:', duration, 'segundos');
-
     if (!process.env.OPENAI_API_KEY) {
-      console.error('❌ OPENAI_API_KEY no está configurado');
+      console.error('OPENAI_API_KEY no está configurado');
       return null;
     }
 
@@ -1823,9 +2182,6 @@ async function generateVideoInternal(prompt, accent = 'neutral', style = 'realis
 
     const maxDur = Math.min(Math.max(Number(duration) || 6, 1), 8);
     const videoPrompt = `Un video corto para Instagram Reels en español.\n\nTema: "${prompt}"\nEstilo visual: ${style}\nTono: profesional y dinámico.\nAudio: narración clara en español (acento ${accent}) y música de fondo sutil.\nFormato: vertical 9:16. Duración máxima: ${maxDur} segundos.`;
-
-    console.log('📤 Solicitando generación a Sora via REST API...');
-    console.log('📝 Prompt final enviado a Sora:', videoPrompt);
     
     // Crear video usando la API REST de OpenAI
     // Nota: Sora solo acepta 'prompt' como parámetro principal
@@ -1844,17 +2200,14 @@ async function generateVideoInternal(prompt, accent = 'neutral', style = 'realis
 
     const jobId = createResponse.data?.id;
     if (!jobId) {
-      console.error('❌ No se obtuvo jobId:', JSON.stringify(createResponse.data, null, 2));
+      console.error('No se obtuvo jobId');
       return null;
     }
 
-    // Polling hasta que el video esté listo
     let status = createResponse.data?.status || 'processing';
-    console.log('⏳ Job iniciado:', jobId, 'Estado:', status);
-    
     let details = createResponse.data;
     let attempts = 0;
-    const maxAttempts = 60; // 8 minutos máximo
+    const maxAttempts = 60;
     
     while (status !== 'completed' && status !== 'succeeded' && status !== 'failed' && status !== 'canceled' && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 8000));
@@ -1872,25 +2225,19 @@ async function generateVideoInternal(prompt, accent = 'neutral', style = 'realis
       
       details = statusResponse.data;
       status = details?.status;
-      console.log(`⏳ Estado actual (intento ${attempts}):`, status);
       
       if (status === 'failed' || status === 'canceled') {
-        console.error('❌ Job falló/cancelado:', JSON.stringify(details, null, 2));
+        console.error('Job falló/cancelado');
         return null;
       }
     }
 
     if (attempts >= maxAttempts) {
-      console.error('❌ Timeout esperando video después de', attempts, 'intentos');
-      console.error('❌ Estado final:', status);
-      console.error('❌ Detalles:', details);
+      console.error('Timeout esperando video');
       return null;
     }
 
-    // Descargar el video desde el endpoint de contenido de OpenAI
-    // https://api.openai.com/v1/videos/{video_id}/content
     const contentUrl = `https://api.openai.com/v1/videos/${jobId}/content`;
-    console.log('📥 Descargando video desde content endpoint:', contentUrl);
     const resp = await axios.get(contentUrl, { 
       responseType: 'arraybuffer',
       headers: {
@@ -1898,39 +2245,25 @@ async function generateVideoInternal(prompt, accent = 'neutral', style = 'realis
       }
     });
     let videoBuffer = Buffer.from(resp.data);
-    console.log('📦 Video descargado, tamaño:', videoBuffer.length, 'bytes');
-    
-    console.log('📦 Video descargado a memoria, tamaño:', videoBuffer.length, 'bytes');
     
     if (!videoBuffer || videoBuffer.length === 0) {
-      console.error('❌ Error: videoBuffer está vacío');
+      console.error('Error: videoBuffer está vacío');
       return null;
     }
     
-    // Generar nombre único para el archivo
     const timestamp = Date.now();
     const fileName = `ai-generated-reel-${timestamp}.mp4`;
-    console.log('📝 Nombre de archivo:', fileName);
       
-    // Subir a Supabase Storage
-    console.log('☁️ Subiendo video a Supabase Storage...');
     const supabaseVideoUrl = await uploadImageToStorage(videoBuffer, fileName, 'video/mp4');
     
     if (!supabaseVideoUrl) {
-      console.error('❌ Error subiendo video a Supabase Storage');
+      console.error('Error subiendo video a Supabase Storage');
       return null;
     }
     
-    console.log('✅ Video guardado en Supabase Storage:', supabaseVideoUrl);
-    console.log('🎉 ÉXITO: generateVideoInternal completado');
     return supabaseVideoUrl;
   } catch (error) {
-    console.error('❌ Error general en generateVideoInternal:', error.message);
-    console.error('🔍 Stack trace:', error.stack);
-    console.error('🔍 Error completo:', error);
-    if (error.response && error.response.data) {
-      console.error('🔍 Respuesta de error de la API:', JSON.stringify(error.response.data, null, 2));
-    }
+    console.error('Error general en generateVideoInternal:', error.message);
     return null;
   }
 }
@@ -1938,11 +2271,8 @@ async function generateVideoInternal(prompt, accent = 'neutral', style = 'realis
 // Función principal que usa la cola para controlar concurrencia
 async function generateVideo(prompt, accent = 'neutral', style = 'realista', duration = 8) {
   return new Promise((resolve, reject) => {
-    // Crear job de video inmediatamente
     const createVideoJob = async () => {
       try {
-        console.log('🎬 Creando job de video...');
-        
         const response = await fetch('https://api.openai.com/v1/videos', {
           method: 'POST',
           headers: {
@@ -1963,8 +2293,6 @@ async function generateVideo(prompt, accent = 'neutral', style = 'realista', dur
         const jobData = await response.json();
         const jobId = jobData.id;
         
-        console.log(`✅ Job de video creado: ${jobId}`);
-        
         // Agregar a la cola de procesamiento en background
         videoProcessingQueue.set(jobId, {
           status: 'queued',
@@ -1973,13 +2301,12 @@ async function generateVideo(prompt, accent = 'neutral', style = 'realista', dur
           reject
         });
         
-        // Iniciar procesamiento en background (no bloquea)
         processVideoInBackground(jobId).catch(error => {
-          console.error(`❌ Error en background processing para ${jobId}:`, error);
+          console.error(`Error en background processing para ${jobId}:`, error);
         });
         
       } catch (error) {
-        console.error('❌ Error creando job de video:', error);
+        console.error('Error creando job de video:', error);
         reject(error);
       }
     };
@@ -1989,35 +2316,32 @@ async function generateVideo(prompt, accent = 'neutral', style = 'realista', dur
   });
 }
 
-// Función para generar imagen con Gemini (mantener como fallback)
-async function generateImageWithGemini(prompt, referenceImage = null) {
+// Función para generar imagen con Gemini usando el nuevo SDK @google/genai
+async function generateImageWithGemini(prompt, referenceImage = null, type = 'post') {
   try {
-    console.log('🚀 INICIO: generateImageWithGemini');
-    console.log('📝 Prompt recibido:', prompt);
-    console.log('🖼️ Imagen de referencia:', referenceImage ? 'Presente' : 'No presente');
-    
-    const geminiClient = getGeminiClient();
-    if (!geminiClient) {
-      console.error('❌ Cliente Gemini no disponible');
+    const ai = getGeminiClient();
+    if (!ai) {
       return null;
     }
-    console.log('✅ Cliente Gemini obtenido correctamente');
-
-    console.log('🎨 Generando imagen con Gemini directamente...');
     
-    // Usar Gemini directamente para generación de imágenes
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-image-preview" });
-    console.log('✅ Modelo Gemini obtenido:', "gemini-2.5-flash-image-preview");
+    // Determinar dimensiones según el tipo
+    const isStory = type === 'story';
+    const dimensions = isStory ? '1080x1920px (vertical 9:16)' : '1080x1080px (square)';
+    const formatDescription = isStory ? 'Instagram Story (vertical 9:16 format)' : 'Instagram post (square)';
     
-    let imagePrompt = `Create an illustrative, cartoon-style Instagram post image (1080x1080px) about: "${prompt}"
+    let imagePrompt = `Create an illustrative, cartoon-style ${formatDescription} image (${dimensions}) about: "${prompt}"
 
 DESIGN REQUIREMENTS:
 - High quality, professional illustration
-- Instagram post dimensions (1080x1080px - square)
+- ${formatDescription} dimensions (${dimensions})
 - Cartoon/caricature style with friendly characters
 - Clean, modern layout with balanced composition
-- Brand colors: blue (#4A90E2), white (#FFFFFF), orange (#FF6B6B)
+- Brand: primary color #41068e (Magneto). Build the palette from this primary.
+- Secondary neutrals: white #FFFFFF, very dark background #0F0A2A when needed.
+- Accents may derive from analogous/complementary hues of #41068e but keep harmony.
 - Illustrative and engaging visual style
+- Full-bleed canvas (NO white frames, NO borders, NO outer padding). Background must cover 100%.
+- Prefer solid/gradient background using #41068e → darker tone or #0F0A2A.
 
 TEXT TO INCLUDE IN IMAGE:
 - Main title: Based on the topic "${prompt}" - create an appropriate title (in white, large and visible)
@@ -2027,10 +2351,8 @@ TEXT TO INCLUDE IN IMAGE:
 - Professional, readable fonts
 
 BRANDING REQUIREMENTS (MANDATORY):
-- Watermark: "MAGNETO EMPLEOS" (in small, elegant font, bottom right corner)
-- Instagram handle: "@magneto_empleos" (in small font, bottom left corner)
-- Both branding elements should be subtle but visible
-- Use brand colors for branding elements
+- Do NOT add any watermark, logos, handles or brand text overlays in the image.
+- All branding must be implicit through color usage and style only.
 
 VISUAL ELEMENTS:
 - Cartoon characters and caricatures
@@ -2046,7 +2368,7 @@ STYLE REQUIRED:
 - Illustrative cartoon style
 - Friendly, approachable characters
 - Professional but fun composition
-- Well-distributed brand colors
+- Well-distributed brand colors with #41068e as the hero color
 - Visual elements that support the message
 - Style that attracts tech professionals
 - Complete image ready to publish
@@ -2055,20 +2377,15 @@ STYLE REQUIRED:
 ${referenceImage ? 'Use the reference image as inspiration for style and composition. Analyze the reference image and apply the requested changes while maintaining the overall structure and visual elements.' : ''}
 
 Generate a complete illustrative image ready for social media with proper branding.`;
-
-    console.log('📤 Enviando prompt a Gemini...');
-    console.log('📝 Prompt completo:', imagePrompt);
     
-    // Construir el contenido con imagen de referencia si está disponible
-    let content;
+    let contents;
     if (referenceImage) {
-      console.log('🖼️ Incluyendo imagen de referencia en el contenido');
       // Descargar la imagen de referencia
       const imageResponse = await fetch(referenceImage);
       const imageBuffer = await imageResponse.arrayBuffer();
       const imageBase64 = Buffer.from(imageBuffer).toString('base64');
       
-      content = [
+      contents = [
         {
           text: imagePrompt
         },
@@ -2080,87 +2397,55 @@ Generate a complete illustrative image ready for social media with proper brandi
         }
       ];
     } else {
-      content = imagePrompt;
+      contents = imagePrompt;
     }
     
-    const result = await model.generateContent(content);
-    console.log('📥 Respuesta recibida de Gemini');
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: contents,
+    });
     
-    const response = await result.response;
-    console.log('📊 Response object:', response);
-    
-    // Gemini devuelve la imagen como datos binarios en base64
-    const candidates = response.candidates;
-    console.log('🔍 Candidates encontrados:', candidates?.length || 0);
-    
-    if (!candidates || candidates.length === 0) {
-      console.error('❌ No se encontraron candidates en la respuesta');
+    if (!response.candidates || response.candidates.length === 0) {
       return null;
     }
     
-    const candidate = candidates[0];
-    console.log('🔍 Candidate:', candidate);
+    const candidate = response.candidates[0];
     
-    const candidateContent = candidate.content;
-    console.log('🔍 Content:', candidateContent);
-    
-    if (!candidateContent || !candidateContent.parts || candidateContent.parts.length === 0) {
-      console.error('❌ No se encontraron parts en el content');
+    if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
       return null;
     }
     
-    // Buscar la imagen en todos los parts
+    const parts = candidate.content.parts;
+    
     let imagePart = null;
-    for (let i = 0; i < candidateContent.parts.length; i++) {
-      const part = candidateContent.parts[i];
-      console.log(`🔍 Part ${i}:`, part);
-      
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
       if (part.inlineData) {
         imagePart = part;
-        console.log(`✅ Imagen encontrada en part ${i}`);
         break;
       }
     }
     
     if (!imagePart) {
-      console.error('❌ No se encontró inlineData en ningún part');
-      console.log('🔍 Parts completos:', JSON.stringify(candidateContent.parts, null, 2));
       return null;
     }
     
-    // Verificar si es una imagen (datos binarios)
-    console.log('✅ Imagen encontrada como inlineData');
-    console.log('📄 MIME type:', imagePart.inlineData.mimeType);
-    console.log('📦 Tamaño de datos base64:', imagePart.inlineData.data.length, 'caracteres');
-    
-    // Convertir base64 a buffer
     const imageBuffer = Buffer.from(imagePart.inlineData.data, 'base64');
-    console.log('📦 Tamaño de imagen convertida:', imageBuffer.length, 'bytes');
     
-    // La imagen ya viene completa con texto incluido por la IA
-    console.log('✅ Imagen generada directamente por la IA con texto incluido');
-    
-    // Generar nombre único para el archivo
     const timestamp = Date.now();
     const fileName = `ai-generated-${timestamp}.png`;
-    console.log('📝 Nombre de archivo:', fileName);
       
-      // Subir a Supabase Storage
-      console.log('☁️ Subiendo imagen a Supabase Storage...');
-      const supabaseImageUrl = await uploadImageToStorage(imageBuffer, fileName, 'image/png');
+    const supabaseImageUrl = await uploadImageToStorage(imageBuffer, fileName, 'image/png');
+    
+    if (!supabaseImageUrl) {
+      console.error('Error subiendo imagen a Supabase Storage');
+      return null;
+    }
       
-      if (!supabaseImageUrl) {
-        console.error('❌ Error subiendo imagen a Supabase Storage');
-        return null;
-      }
-      
-      console.log('✅ Imagen guardada en Supabase Storage:', supabaseImageUrl);
-      console.log('🎉 ÉXITO: generateImageWithGemini completado');
-      return supabaseImageUrl;
+    const finalUrl = await maybeApplyWatermarkAndReupload(supabaseImageUrl);
+    return finalUrl;
   } catch (error) {
-    console.error('❌ Error general en generateImageWithGemini:', error.message);
-    console.error('🔍 Stack trace:', error.stack);
-    console.error('🔍 Error completo:', error);
+    console.error('Error general en generateImageWithGemini:', error.message);
     return null;
   }
 }
@@ -2174,21 +2459,43 @@ async function generateAIContent(prompt) {
       return null;
     }
 
-    console.log('🤖 Generando contenido con Gemini directamente...');
+    const { BRAND_IDENTITY } = require('./constants');
     
-    // Usar Gemini directamente para generación de contenido con el modelo más reciente
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    // Enriquecer el prompt con la identidad de marca
+    const enrichedPrompt = `Eres copywriter de Magneto Empleos, una plataforma que conecta candidatos con oportunidades laborales.
+
+IDENTIDAD DE MARCA:
+- Eslogan principal: "${BRAND_IDENTITY.MAIN_SLOGAN}"
+- Eslóganes secundarios: ${BRAND_IDENTITY.SECONDARY_SLOGANS.join(', ')}
+- Mensajes clave: ${BRAND_IDENTITY.KEY_MESSAGES.join(' | ')}
+
+TONO DE COMUNICACIÓN:
+- Cercano, humano, amigable, accesible, empático
+- Positivo, motivador, directo
+- Equilibrio entre profesionalismo y calidez
+- Lenguaje sencillo, conciso e inclusivo
+- Sin tecnicismos excesivos
+- Energía y dinamismo
+
+PROPÓSITO: Impulsar carreras y transmitir que las oportunidades transforman vidas.
+
+TAREA:
+${prompt}
+
+Genera contenido que refleje esta identidad de marca y tono de comunicación.`;
     
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const generatedContent = response.text();
+    // Usar la nueva API de @google/genai
+    const response = await geminiClient.models.generateContent({
+      model: "gemini-2.5-flash-lite",
+      contents: enrichedPrompt
+    });
+    
+    const generatedContent = response.text;
     
     if (!generatedContent) {
-      console.error('No se pudo generar contenido');
       return null;
     }
 
-    console.log('✅ Contenido generado exitosamente');
     return generatedContent.trim();
   } catch (error) {
     console.error('Error generando contenido con Gemini:', error);
@@ -2200,17 +2507,12 @@ async function generateAIContent(prompt) {
 async function publishInstagramStory(imageUrl) {
   try {
     if (!process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID) {
-      console.error('❌ INSTAGRAM_BUSINESS_ACCOUNT_ID no está configurado');
       return { success: false, error: 'Instagram Business Account ID no configurado' };
     }
 
     if (!process.env.INSTAGRAM_ACCESS_TOKEN) {
-      console.error('❌ INSTAGRAM_ACCESS_TOKEN no está configurado');
       return { success: false, error: 'Instagram Access Token no configurado' };
     }
-
-    console.log('📱 Publicando story en Instagram...');
-    console.log('🖼️ Imagen URL:', imageUrl);
 
     // Paso 1: Crear media container para story
     const createMediaResponse = await fetch(`https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media`, {
@@ -2227,18 +2529,13 @@ async function publishInstagramStory(imageUrl) {
 
     if (!createMediaResponse.ok) {
       const errorText = await createMediaResponse.text();
-      console.error('❌ Error creando media container para story:', errorText);
+      console.error('Error creando media container para story:', errorText);
       return { success: false, error: `Error creando media: ${errorText}` };
     }
 
     const mediaData = await createMediaResponse.json();
-    console.log('✅ Media container para story creado:', mediaData.id);
 
-    // Esperar un momento para que Instagram procese el media
-    console.log('⏳ Esperando que Instagram procese el media...');
-    await new Promise(resolve => setTimeout(resolve, 3000)); // 3 segundos de espera
-
-    // Paso 2: Publicar la story
+    await new Promise(resolve => setTimeout(resolve, 3000));
     const publishResponse = await fetch(`https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media_publish`, {
       method: 'POST',
       headers: {
@@ -2252,12 +2549,11 @@ async function publishInstagramStory(imageUrl) {
 
     if (!publishResponse.ok) {
       const errorText = await publishResponse.text();
-      console.error('❌ Error publicando story:', errorText);
+      console.error('Error publicando story:', errorText);
       return { success: false, error: `Error publicando story: ${errorText}` };
     }
 
     const publishData = await publishResponse.json();
-    console.log('✅ Story publicada exitosamente:', publishData.id);
 
     return {
       success: true,
@@ -2267,7 +2563,7 @@ async function publishInstagramStory(imageUrl) {
     };
 
   } catch (error) {
-    console.error('❌ Error general publicando story:', error);
+    console.error('Error general publicando story:', error);
     return { success: false, error: error.message };
   }
 }
@@ -2276,20 +2572,37 @@ async function publishInstagramStory(imageUrl) {
 async function publishInstagramPost(imageUrl, caption) {
   try {
     if (!process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID) {
-      console.error('❌ INSTAGRAM_BUSINESS_ACCOUNT_ID no está configurado');
       return { success: false, error: 'Instagram Business Account ID no configurado' };
     }
 
     if (!process.env.INSTAGRAM_ACCESS_TOKEN) {
-      console.error('❌ INSTAGRAM_ACCESS_TOKEN no está configurado');
       return { success: false, error: 'Instagram Access Token no configurado' };
     }
+    let captionStr = '';
+    if (typeof caption === 'string') {
+      captionStr = caption;
+    } else if (caption && typeof caption === 'object') {
+      // intentar campos comunes
+      captionStr = caption.content || caption.text || caption.final || caption.final_caption || '';
+    } else if (Array.isArray(caption)) {
+      captionStr = caption.join(', ');
+    } else if (caption != null) {
+      captionStr = String(caption);
+    }
 
-    console.log('📱 Publicando post en Instagram...');
-    console.log('🖼️ Imagen URL:', imageUrl);
-    console.log('🖼️ Tipo de imageUrl:', typeof imageUrl);
-    console.log('📝 Caption:', caption ? caption.substring(0, 100) + '...' : 'Sin caption');
-    console.log('📝 Tipo de caption:', typeof caption);
+    // Si vino como JSON string con estructura { captions: [ { content: ... } ] }
+    try {
+      const trimmed = (captionStr || '').trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && Array.isArray(parsed.captions) && parsed.captions.length > 0) {
+          // Elegir la primera opción por defecto
+          const first = parsed.captions[0];
+          const fromFirst = (first && (first.content || first.text || first.title)) || '';
+          if (fromFirst) captionStr = fromFirst;
+        }
+      }
+    } catch (_) {}
 
     // Paso 1: Crear media container
     const createMediaResponse = await fetch(`https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media`, {
@@ -2300,24 +2613,19 @@ async function publishInstagramPost(imageUrl, caption) {
       },
       body: JSON.stringify({
         image_url: imageUrl,
-        caption: caption
+        caption: captionStr || undefined
       })
     });
 
     if (!createMediaResponse.ok) {
       const errorText = await createMediaResponse.text();
-      console.error('❌ Error creando media container:', errorText);
+      console.error('Error creando media container:', errorText);
       return { success: false, error: `Error creando media: ${errorText}` };
     }
 
     const mediaData = await createMediaResponse.json();
-    console.log('✅ Media container creado:', mediaData.id);
 
-    // Esperar un momento para que Instagram procese el media
-    console.log('⏳ Esperando que Instagram procese el media...');
-    await new Promise(resolve => setTimeout(resolve, 3000)); // 3 segundos de espera
-
-    // Paso 2: Publicar el media
+    await new Promise(resolve => setTimeout(resolve, 3000));
     const publishResponse = await fetch(`https://graph.instagram.com/v21.0/${process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media_publish`, {
       method: 'POST',
       headers: {
@@ -2331,12 +2639,11 @@ async function publishInstagramPost(imageUrl, caption) {
 
     if (!publishResponse.ok) {
       const errorText = await publishResponse.text();
-      console.error('❌ Error publicando media:', errorText);
+      console.error('Error publicando media:', errorText);
       return { success: false, error: `Error publicando: ${errorText}` };
     }
 
     const publishData = await publishResponse.json();
-    console.log('✅ Post publicado exitosamente:', publishData.id);
 
     return {
       success: true,
@@ -2346,7 +2653,7 @@ async function publishInstagramPost(imageUrl, caption) {
     };
 
   } catch (error) {
-    console.error('❌ Error en publishInstagramPost:', error);
+    console.error('Error en publishInstagramPost:', error);
     return { success: false, error: error.message };
   }
 }
@@ -2355,17 +2662,34 @@ async function publishInstagramPost(imageUrl, caption) {
 async function publishInstagramReel(videoUrl, caption) {
   try {
     if (!process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID) {
-      console.error('❌ INSTAGRAM_BUSINESS_ACCOUNT_ID no está configurado');
       return { success: false, error: 'Instagram Business Account ID no configurado' };
     }
     if (!process.env.INSTAGRAM_ACCESS_TOKEN) {
-      console.error('❌ INSTAGRAM_ACCESS_TOKEN no está configurado');
       return { success: false, error: 'Instagram Access Token no configurado' };
     }
+    let captionStr = '';
+    if (typeof caption === 'string') {
+      captionStr = caption;
+    } else if (caption && typeof caption === 'object') {
+      captionStr = caption.content || caption.text || caption.final || caption.final_caption || '';
+    } else if (Array.isArray(caption)) {
+      captionStr = caption.join(', ');
+    } else if (caption != null) {
+      captionStr = String(caption);
+    }
 
-    console.log('🎞️ Publicando Reel (direct video_url)...');
-    console.log('🎞️ Video URL:', videoUrl);
-    console.log('📝 Caption:', caption ? caption.substring(0, 100) + '...' : 'Sin caption');
+    // Si vino como JSON string con estructura { captions: [ { content: ... } ] }
+    try {
+      const trimmed = (captionStr || '').trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && Array.isArray(parsed.captions) && parsed.captions.length > 0) {
+          const first = parsed.captions[0];
+          const fromFirst = (first && (first.content || first.text || first.title)) || '';
+          if (fromFirst) captionStr = fromFirst;
+        }
+      }
+    } catch (_) {}
 
     // 1) Crear media container directo con video_url y media_type REELS
     const createContainerResp = await fetch(`https://graph.instagram.com/v24.0/${process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media`, {
@@ -2377,19 +2701,18 @@ async function publishInstagramReel(videoUrl, caption) {
       body: JSON.stringify({
         media_type: 'REELS',
         video_url: videoUrl,
-        caption: caption || undefined
+        caption: captionStr || undefined
       })
     });
 
     if (!createContainerResp.ok) {
       const errorText = await createContainerResp.text();
-      console.error('❌ Error creando contenedor (resumable):', errorText);
+      console.error('Error creando contenedor:', errorText);
       return { success: false, error: `Error creando contenedor: ${errorText}` };
     }
 
     const container = await createContainerResp.json();
     const containerId = container.id;
-    console.log('✅ Contenedor creado:', containerId);
 
     // 2) Poll del estado del contenedor hasta FINISHED
     let status = 'IN_PROGRESS';
@@ -2402,13 +2725,12 @@ async function publishInstagramReel(videoUrl, caption) {
       });
       if (!statusResp.ok) {
         const err = await statusResp.text();
-        console.warn('⚠️ Error consultando status del contenedor:', err);
+        console.warn('Error consultando status del contenedor:', err);
         await new Promise(r => setTimeout(r, 3000));
         continue;
       }
       const statusJson = await statusResp.json();
       status = statusJson.status_code || 'IN_PROGRESS';
-      console.log(`⏳ Estado contenedor (${attempts}/${maxAttempts}):`, status);
       if (status === 'FINISHED' || status === 'PUBLISHED') break;
       if (status === 'ERROR' || status === 'EXPIRED') {
         return { success: false, error: `Estado del contenedor: ${status}` };
@@ -2432,12 +2754,11 @@ async function publishInstagramReel(videoUrl, caption) {
 
     if (!publishResp.ok) {
       const errorText = await publishResp.text();
-      console.error('❌ Error publicando Reel:', errorText);
+      console.error('Error publicando Reel:', errorText);
       return { success: false, error: `Error publicando Reel: ${errorText}` };
     }
 
     const publishData = await publishResp.json();
-    console.log('✅ Reel publicado, media id:', publishData.id);
 
     // 4) Obtener permalink
     let permalink = null;
@@ -2450,7 +2771,6 @@ async function publishInstagramReel(videoUrl, caption) {
         permalink = fields.permalink || null;
       }
     } catch (e) {
-      console.warn('⚠️ No se pudo obtener permalink del Reel:', e.message);
     }
 
     return {
@@ -2460,7 +2780,7 @@ async function publishInstagramReel(videoUrl, caption) {
       permalink
     };
   } catch (error) {
-    console.error('❌ Error general publicando Reel:', error);
+    console.error('Error general publicando Reel:', error);
     return { success: false, error: error.message };
   }
 }
@@ -2677,6 +2997,52 @@ async function sendInstagramCommentReply(commentId, reply) {
   } catch (error) {
     console.error('Error en sendInstagramCommentReply:', error);
   }
+}
+
+// Like a un comentario en Instagram
+async function likeInstagramComment(commentId) {
+  try {
+    const url = `https://graph.facebook.com/v20.0/${commentId}/likes`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}` }
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      console.error('Error dando like al comentario:', t);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error en likeInstagramComment:', e);
+    return false;
+  }
+}
+
+// Clasificación de sentimiento con Gemini (positivo/neutral/negativo)
+async function classifyCommentSentiment(text) {
+  try {
+    const client = getGeminiClient();
+    if (!client) return 'neutral';
+    const prompt = `Clasifica el sentimiento del siguiente comentario como una sola palabra exacta: positivo, neutral o negativo. Devuelve solo esa palabra en minúsculas.\n\nComentario: "${text}"`;
+    const res = await client.models.generateContent({
+      model: 'gemini-2.5-flash-lite',
+      contents: prompt
+    });
+    const out = (res.text || '').trim().toLowerCase();
+    if (out.startsWith('neg')) return 'negativo';
+    if (out.startsWith('pos')) return 'positivo';
+    return 'neutral';
+  } catch (_) {
+    return 'neutral';
+  }
+}
+
+// Responder al comentario del usuario
+async function replyAndMaybeLike(commentId, originalCommentText, replyText) {
+  // Responder al comentario
+  await sendInstagramCommentReply(commentId, replyText);
+  
 }
 
 // Función para obtener información de story desde reply
@@ -3101,8 +3467,31 @@ async function getUserMissingData(userId) {
     if (!conversation.user_availability) missingData.push('availability');
     if (!conversation.user_interests || conversation.user_interests.length === 0) missingData.push('interests');
 
+    // Obtener preferencias del usuario basadas en likes (asíncrono, no bloquea)
+    let preferencesContext = null;
+    try {
+      const UserPreferencesService = require('../services/UserPreferencesService');
+      const preferencesService = new UserPreferencesService();
+      
+      // Verificar si tiene suficientes datos para análisis
+      const hasEnoughData = await preferencesService.hasEnoughData(userId, 5);
+      if (hasEnoughData) {
+        preferencesContext = await preferencesService.getUserPreferencesContext(userId);
+      }
+    } catch (prefError) {
+      console.warn('No se pudieron obtener preferencias del usuario:', prefError.message);
+      // No fallar si no se pueden obtener preferencias
+    }
+
+    // Agregar preferencias al objeto de conversación si están disponibles
+    const conversationWithPreferences = {
+      ...conversation,
+      user_data_completion_percentage: Math.round(((10 - missingData.length) / 10) * 100),
+      user_preferences_context: preferencesContext
+    };
+
     return {
-      conversation,
+      conversation: conversationWithPreferences,
       missingData,
       completionPercentage: Math.round(((10 - missingData.length) / 10) * 100)
     };
@@ -3205,18 +3594,18 @@ Ejemplo de respuesta:
   "user_location": "Bogotá"
 }`;
 
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const extractedData = response.text().trim();
+    const response = await geminiClient.models.generateContent({
+      model: "gemini-2.5-flash-lite",
+      contents: prompt
+    });
+    const extractedData = (response.text || '').trim();
     
     if (extractedData) {
       try {
         const parsed = JSON.parse(extractedData);
-        console.log('🔍 Datos detectados automáticamente:', parsed);
         return parsed;
       } catch (error) {
-        console.log('⚠️ Error parseando datos extraídos:', extractedData);
+        console.warn('Error parseando datos extraídos:', extractedData);
         return {};
       }
     }
@@ -3261,10 +3650,11 @@ Instrucciones específicas:
 
 Responde SOLO con el valor extraído en el formato correcto. Si no encuentras información relevante, responde "null".`;
 
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-    const result = await model.generateContent(extractionPrompt);
-    const response = await result.response;
-    const extractedData = response.text().trim();
+    const response = await geminiClient.models.generateContent({
+      model: "gemini-2.5-flash-lite",
+      contents: extractionPrompt
+    });
+    const extractedData = (response.text || '').trim();
     
     if (extractedData && extractedData !== 'null' && extractedData !== 'null.') {
       console.log(`Datos extraídos para ${dataType}:`, extractedData);
@@ -3417,13 +3807,6 @@ async function updateUserData(userId, dataType, dataValue) {
       return null;
     }
 
-    // Log de actualización
-    console.log(`✅ Datos actualizados para usuario ${userId}:`, {
-      dataType,
-      dataValue,
-      updatedFields: Object.keys(updateData)
-    });
-
     // Recalcular porcentaje de completitud
     const userData = await getUserMissingData(userId);
     if (userData) {
@@ -3548,6 +3931,22 @@ async function saveInstagramComment(commentData) {
       throw error;
     }
 
+    // Notificar nuevo comentario vía SSE
+    try {
+      notifyNewComment({
+        id: data.id,
+        post_id: data.post_id,
+        username: data.username,
+        comment_text: data.comment_text,
+        is_ai_response: data.is_ai_response,
+        created_at: data.created_at
+      });
+      console.log('📢 Notificación SSE enviada para nuevo comentario:', data.id);
+    } catch (notifyError) {
+      console.error('Error enviando notificación SSE de comentario:', notifyError);
+      // No fallar si la notificación falla
+    }
+
     return data;
   } catch (error) {
     console.error('Error en saveInstagramComment:', error);
@@ -3633,13 +4032,27 @@ async function getAllInstagramPosts(limit = 20, offset = 0) {
           .eq('post_id', post.id)
           .eq('is_ai_response', false);
 
+        // Obtener conteo de likes desde Instagram API usando like_count
+        let likesCount = 0;
+        if (post.instagram_post_id || post.media_id) {
+          try {
+            const mediaId = post.instagram_post_id || post.media_id;
+            const mediaInfo = await getInstagramMediaInfo(mediaId);
+            if (mediaInfo && mediaInfo.like_count !== undefined) {
+              likesCount = mediaInfo.like_count;
+            }
+          } catch (error) {
+            console.warn(`No se pudo obtener like_count para post ${post.id}:`, error.message);
+          }
+        }
+
         return {
           ...post,
           stats: {
             total_comments: totalComments || 0,
             user_comments: userComments || 0,
             ai_comments: aiComments || 0,
-            likes: 0 // Instagram no proporciona likes via API para posts normales
+            likes: likesCount // Conteo de likes desde Instagram API usando like_count
           }
         };
       })
@@ -3668,10 +4081,15 @@ module.exports = {
   getInstagramUserInfo,
   getInstagramUsername,
   getInstagramMediaInfo,
+  getInstagramPostLikes,
+  getInstagramPostLikeCount,
+  getAllInstagramAccountMedia,
+  syncInstagramPostLikes,
   getStoryInfo,
   getStoryInfoFromReply,
   sendInstagramDMReply,
   sendInstagramCommentReply,
+  replyAndMaybeLike,
   
   // Emociones
   detectUserEmotion,
@@ -3730,67 +4148,201 @@ module.exports = {
   
   // Constantes
   SYSTEM_PROMPT,
-  fuseOptions
+  fuseOptions,
+  
+  // Notificaciones
+  notifyNewComment
 };
 
 // Función unificada para generar preview completo (imagen + captions + sugerencias)
 async function generateCompletePreview(topic, style, targetAudience, type = 'post', referenceImage = null) {
   try {
-    console.log(`🎯 Generando preview completo para ${type}...`);
-    
-    // Generar imagen según el tipo
-    let mediaUrl;
     if (type === 'reel') {
       throw new Error('Para reels usar generateCompleteReelPreview');
-    } else {
-      mediaUrl = await generateImageWithGemini(topic, referenceImage);
     }
+    
+    if (type === 'story') {
+      const mediaUrl = await generateImageWithGemini(topic, referenceImage, 'story');
+      
+      if (!mediaUrl) {
+        throw new Error('Error generando media');
+      }
+      return {
+        mediaUrl,
+        captionOptions: null, // Stories no tienen captions
+        improveSuggestions: null // Stories no tienen sugerencias de mejora
+      };
+    }
+    
+    const [mediaUrl, captionOptions] = await Promise.all([
+      generateImageWithGemini(topic, referenceImage, 'post'),
+      generateCaptionOptions(topic, style, targetAudience)
+    ]);
     
     if (!mediaUrl) {
       throw new Error('Error generando media');
     }
     
-    // Generar captions y sugerencias en paralelo
-    const [captionOptions, improveSuggestions] = await Promise.all([
-      generateCaptionOptions(topic, style, targetAudience),
-      generateImproveSuggestions(topic, style, targetAudience, mediaUrl)
-    ]);
-    
+    const improveSuggestions = await generateImproveSuggestions(topic, style, targetAudience, mediaUrl);
     return {
       mediaUrl,
       captionOptions,
       improveSuggestions
     };
   } catch (error) {
-    console.error('❌ Error generando preview completo:', error);
+    console.error('Error generando preview completo:', error);
     return null;
   }
 }
 
-// Función unificada para generar preview completo de reel
-async function generateCompleteReelPreview(prompt, accent, style, duration, targetAudience) {
+// Función de streaming para generar preview completo (imagen + captions + sugerencias)
+async function generateCompletePreviewStream(topic, style, targetAudience, type = 'post', referenceImage = null, sendEvent) {
   try {
-    console.log('🎬 Generando preview completo de reel...');
+    if (type === 'reel') {
+      throw new Error('Para reels usar generateCompleteReelPreviewStream');
+    }
     
-    // Generar video con retry
+    if (type === 'story') {
+      sendEvent('status', { message: 'Generando story...' });
+      
+      const mediaUrl = await generateImageWithGemini(topic, referenceImage, 'story');
+      
+      if (!mediaUrl) {
+        sendEvent('error', { message: 'Error generando media' });
+        return;
+      }
+      
+      sendEvent('media', { mediaUrl, type: 'image' });
+      
+      try {
+        const previewData = {
+          type: 'story',
+          topic: topic,
+          style: style,
+          target_audience: targetAudience,
+          image_url: mediaUrl,
+          status: 'draft',
+          suggested_caption: null,
+          improve_suggestions: null,
+          created_by: 'user',
+        };
+
+        const { data: savedPreview, error: saveError } = await supabase
+          .from('instagram_previews')
+          .insert(previewData)
+          .select()
+          .single();
+
+        if (saveError) {
+          console.error('Error guardando preview de story:', saveError);
+          sendEvent('error', { message: `Error guardando preview: ${saveError.message}` });
+        } else if (savedPreview) {
+          sendEvent('preview_saved', { previewId: savedPreview.id });
+        }
+      } catch (saveErr) {
+        console.error('Excepción al guardar preview de story:', saveErr);
+        sendEvent('error', { message: `Error guardando preview: ${saveErr.message}` });
+      }
+      return;
+    }
+    
+    sendEvent('status', { message: 'Generando opciones de caption...' });
+    const captionOptions = await generateCaptionOptions(topic, style, targetAudience);
+    
+    if (captionOptions) {
+      sendEvent('captions', { captionOptions });
+    }
+    
+    sendEvent('status', { message: 'Generando imagen...' });
+    const mediaUrl = await generateImageWithGemini(topic, referenceImage, 'post');
+    
+    if (!mediaUrl) {
+      sendEvent('error', { message: 'Error generando media' });
+      return;
+    }
+    
+    sendEvent('media', { mediaUrl, type: 'image' });
+    
+    sendEvent('status', { message: 'Generando sugerencias de mejora...' });
+    const improveSuggestions = await generateImproveSuggestions(topic, style, targetAudience, mediaUrl);
+    
+    if (improveSuggestions) {
+      sendEvent('suggestions', { improveSuggestions });
+    }
+  } catch (error) {
+    console.error('Error generando preview completo en streaming:', error);
+    sendEvent('error', { message: error.message });
+  }
+}
+
+// Función de streaming para generar preview completo de reel
+async function generateCompleteReelPreviewStream(prompt, accent, style, duration, targetAudience, sendEvent) {
+  try {
+    sendEvent('status', { message: 'Generando opciones de caption...' });
+    const captionOptions = await generateCaptionOptions(prompt, 'reel', targetAudience);
+    
+    if (captionOptions) {
+      sendEvent('captions', { captionOptions });
+    }
+    
+    sendEvent('status', { message: 'Generando video...' });
+    
     let videoUrl = null;
     let attempts = 0;
     const maxVideoAttempts = 2;
     
     while (!videoUrl && attempts < maxVideoAttempts) {
       attempts++;
-      console.log(`🎬 Intento ${attempts}/${maxVideoAttempts} generando video...`);
+      sendEvent('status', { message: `Generando video... (Intento ${attempts}/${maxVideoAttempts})` });
       
       videoUrl = await generateVideo(prompt, accent, style, duration);
       
       if (!videoUrl && attempts < maxVideoAttempts) {
-        console.log(`⏳ Esperando 30 segundos antes del siguiente intento...`);
+        sendEvent('status', { message: 'Reintentando generación de video...' });
         await new Promise(resolve => setTimeout(resolve, 30000));
       }
     }
     
     if (!videoUrl) {
-      console.error('❌ No se pudo generar video después de', maxVideoAttempts, 'intentos');
+      console.error('No se pudo generar video después de', maxVideoAttempts, 'intentos');
+      sendEvent('error', { 
+        message: 'No se pudo generar el video. El servicio de generación de videos está experimentando problemas técnicos.' 
+      });
+      return;
+    }
+    
+    sendEvent('media', { videoUrl, type: 'video' });
+    
+    sendEvent('status', { message: 'Generando sugerencias de mejora...' });
+    const improveSuggestions = await generateImproveSuggestions(prompt, 'reel', targetAudience, videoUrl);
+    
+    if (improveSuggestions) {
+      sendEvent('suggestions', { improveSuggestions });
+    }
+  } catch (error) {
+    console.error('Error generando preview completo de reel en streaming:', error);
+    sendEvent('error', { message: error.message });
+  }
+}
+
+// Función unificada para generar preview completo de reel
+async function generateCompleteReelPreview(prompt, accent, style, duration, targetAudience) {
+  try {
+    let videoUrl = null;
+    let attempts = 0;
+    const maxVideoAttempts = 2;
+    
+    while (!videoUrl && attempts < maxVideoAttempts) {
+      attempts++;
+      videoUrl = await generateVideo(prompt, accent, style, duration);
+      
+      if (!videoUrl && attempts < maxVideoAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 30000));
+      }
+    }
+    
+    if (!videoUrl) {
+      console.error('No se pudo generar video después de', maxVideoAttempts, 'intentos');
       return {
         error: 'No se pudo generar el video. El servicio de generación de videos está experimentando problemas técnicos.',
         videoUrl: null,
@@ -3811,7 +4363,7 @@ async function generateCompleteReelPreview(prompt, accent, style, duration, targ
       improveSuggestions
     };
   } catch (error) {
-    console.error('❌ Error generando preview completo de reel:', error);
+    console.error('Error generando preview completo de reel:', error);
     return {
       error: 'Error interno generando preview de reel',
       videoUrl: null,
@@ -3824,53 +4376,48 @@ async function generateCompleteReelPreview(prompt, accent, style, duration, targ
 // Función para generar respuesta con function calling
 async function generateResponseWithFunctionCalling(userText, context, mediaInfo = null, messageHistory = [], userData = null, userId = null) {
   try {
-    console.log('🤖 Generando respuesta con function calling...');
     
     const geminiClient = getGeminiClient();
     if (!geminiClient) {
-      console.error('❌ Cliente Gemini no disponible');
+      console.error('Cliente Gemini no disponible');
       return { reply: 'Lo siento, no puedo procesar tu mensaje en este momento.', functionCalls: [] };
     }
 
     // Construir mensajes
     const messages = await buildMessagesWithContent(userText, context, mediaInfo, messageHistory, userData);
+    const prompt = convertMessagesForGemini(messages);
     
-    // Configurar el modelo con function calling
-    const model = geminiClient.getGenerativeModel({ 
+    // Usar la nueva API de @google/genai
+    // Nota: function calling puede requerir configuración adicional en la nueva API
+    const response = await geminiClient.models.generateContent({
       model: "gemini-2.5-flash-lite",
-      tools: AI_FUNCTIONS
+      contents: prompt
+      // tools: GEMINI_TOOLS // TODO: Verificar cómo se configuran tools en la nueva API
     });
-
-    // Generar contenido
-    const result = await model.generateContent(convertMessagesForGemini(messages));
-    const response = await result.response;
     
-    // Verificar si hay function calls
-    const functionCalls = response.functionCalls();
-    let reply = response.text();
+    // Verificar si hay function calls (puede requerir ajuste según la nueva API)
+    const functionCalls = response.functionCalls || [];
+    let reply = response.text || '';
     
     // Procesar function calls si existen
     if (functionCalls && functionCalls.length > 0) {
-      console.log(`🔧 ${functionCalls.length} function calls detectados`);
       
       for (const functionCall of functionCalls) {
         const functionName = functionCall.name;
         const args = functionCall.args;
         
-        console.log(`🔧 Ejecutando función: ${functionName}`, args);
         
         if (userId) {
           const result = await processFunctionCall(functionName, args, userId);
-          console.log(`✅ Resultado de ${functionName}:`, result);
         } else {
-          console.warn('⚠️ No se proporcionó userId para function call');
+          console.warn('No se proporcionó userId para function call');
         }
       }
     }
 
     return { reply, functionCalls: functionCalls || [] };
   } catch (error) {
-    console.error('❌ Error generando respuesta con function calling:', error);
+    console.error('Error generando respuesta con function calling:', error);
     return { reply: 'Lo siento, hubo un error procesando tu mensaje.', functionCalls: [] };
   }
 }
@@ -3878,7 +4425,95 @@ async function generateResponseWithFunctionCalling(userText, context, mediaInfo 
 // Agregar las nuevas funciones al module.exports
 module.exports.generateCompletePreview = generateCompletePreview;
 module.exports.generateCompleteReelPreview = generateCompleteReelPreview;
+module.exports.generateCompletePreviewStream = generateCompletePreviewStream;
+module.exports.generateCompleteReelPreviewStream = generateCompleteReelPreviewStream;
 module.exports.generateResponseWithFunctionCalling = generateResponseWithFunctionCalling;
-module.exports.AI_FUNCTIONS = AI_FUNCTIONS;
+module.exports.AI_FUNCTIONS = AI_FUNCTION_DECLARATIONS;
+module.exports.GEMINI_TOOLS = GEMINI_TOOLS;
 module.exports.processFunctionCall = processFunctionCall;
 module.exports.videoProcessingQueue = videoProcessingQueue;
+
+async function applyWatermark(baseImageUrl, watermarkUrl, options = {}) {
+  try {
+    const position = options.position || 'bottom-right';
+    const margin = options.margin ?? 24; // px
+    const scale = options.scale ?? 0.18; // relative to min(width,height)
+
+    const [baseImg, wmImg] = await Promise.all([loadImage(baseImageUrl), loadImage(watermarkUrl)]);
+
+    const canvas = createCanvas(baseImg.width, baseImg.height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(baseImg, 0, 0);
+
+    // Compute watermark size
+    const target = Math.min(baseImg.width, baseImg.height) * scale;
+    const ratio = wmImg.width / wmImg.height;
+    const wmW = target;
+    const wmH = target / ratio;
+
+    // Positions
+    let x = margin;
+    let y = baseImg.height - wmH - margin;
+    if (position === 'bottom-right') {
+      x = baseImg.width - wmW - margin;
+      y = baseImg.height - wmH - margin;
+    } else if (position === 'top-left') {
+      x = margin;
+      y = margin;
+    } else if (position === 'top-right') {
+      x = baseImg.width - wmW - margin;
+      y = margin;
+    } else if (position === 'bottom-left') {
+      x = margin;
+      y = baseImg.height - wmH - margin;
+    }
+
+    ctx.globalAlpha = options.opacity ?? 0.95; // casi opaco
+    ctx.drawImage(wmImg, x, y, wmW, wmH);
+
+    return canvas.toBuffer('image/png');
+  } catch (e) {
+    console.error('Error aplicando marca de agua:', e);
+    return null;
+  }
+}
+
+// Aplica marca de agua si existe WATERMARK_URL en env; sube a supabase y devuelve nueva URL
+async function maybeApplyWatermarkAndReupload(publicUrl) {
+  try {
+    // Usar variable de entorno si existe; de lo contrario, usar archivo local en la raíz del backend
+    const watermarkPath = process.env.WATERMARK_URL || path.join(__dirname, '../../logo_full.png');
+
+    // Verificar si el archivo existe antes de intentar usarlo
+    const fs = require('fs');
+    if (!process.env.WATERMARK_URL && !fs.existsSync(watermarkPath)) {
+      return publicUrl;
+    }
+
+    const watermarkUrl = process.env.WATERMARK_URL || watermarkPath;
+    
+    const buffered = await applyWatermark(publicUrl, watermarkUrl, {
+      position: 'bottom-right',
+      margin: 32,
+      scale: 0.18,
+      opacity: 0.95,
+    });
+    if (!buffered) {
+      return publicUrl;
+    }
+
+    const fileName = `ai-generated-wm-${Date.now()}.png`;
+    const { data, error } = await supabase.storage
+      .from('magneto-bucket')
+      .upload(`watermarked/${fileName}`, buffered, { contentType: 'image/png', upsert: false });
+    if (error) {
+      console.error('Error subiendo imagen con watermark:', error);
+      return publicUrl;
+    }
+    const watermarkedUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/${data.fullPath}`;
+    return watermarkedUrl;
+  } catch (e) {
+    console.error('Error en maybeApplyWatermarkAndReupload:', e);
+    return publicUrl;
+  }
+}

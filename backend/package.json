@@ -1,4 +1,8 @@
 {
+  "name": "magneto-empleos-backend",
+  "version": "2.0.0",
+  "description": "Backend API para Magneto Empleos con arquitectura por capas y middlewares",
+  "main": "src/server.js",
   "dependencies": {
     "@google/genai": "^1.24.0",
     "@google/generative-ai": "^0.24.1",
@@ -11,9 +15,27 @@
     "fuse.js": "^7.1.0",
     "google-auth-library": "^10.4.0",
     "multer": "^2.0.2",
-    "openai": "^5.23.2"
+    "openai": "^5.23.2",
+    "uuid": "^9.0.0"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
+  },
+  "keywords": [
+    "api",
+    "backend",
+    "instagram",
+    "ai",
+    "jobs",
+    "layered-architecture"
+  ],
+  "author": "Magneto Empleos Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
   }
 }

@@ -9,6 +9,7 @@ const {
   getStoryInfoFromReply,
   sendInstagramDMReply,
   sendInstagramCommentReply,
+  replyAndMaybeLike,
   detectUserEmotion,
   updateUserProfileInfo,
   getUserMessageHistory,
@@ -72,36 +73,49 @@ async function handleInstagramComment(commentData) {
       is_ai_response: false
     });
 
-    // Detectar emoción del usuario automáticamente
-    console.log('😊 Detectando emoción del usuario en comentario...');
-    const detectedEmotion = await detectUserEmotion(commentData.from.id);
-    
-    if (detectedEmotion) {
-      // Buscar conversación del usuario para actualizar emoción
-      const { data: conversation } = await supabase
-        .from('conversaciones')
-        .select('id')
-        .eq('user_id', commentData.from.id)
-        .eq('platform', 'instagram')
-        .eq('conversation_type', 'dm')
-        .single();
-      
-      if (conversation) {
-        const { error: emotionError } = await supabase
-          .from('conversaciones')
-          .update({ 
-            user_current_emotion: detectedEmotion,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', conversation.id);
+      // Detectar emoción del usuario automáticamente
+      console.log('😊 Detectando emoción del usuario en comentario...');
+      try {
+        const detectedEmotion = await detectUserEmotion(commentData.from.id);
+        console.log(`🎭 Emoción detectada para comentario: ${detectedEmotion}`);
         
-        if (emotionError) {
-          console.error('❌ Error actualizando emoción:', emotionError);
+        if (detectedEmotion) {
+          // Buscar conversación del usuario para actualizar emoción
+          const { data: conversation, error: conversationError } = await supabase
+            .from('conversaciones')
+            .select('id')
+            .eq('user_id', commentData.from.id)
+            .eq('platform', 'instagram')
+            .eq('conversation_type', 'dm')
+            .single();
+          
+          if (conversationError) {
+            console.error('❌ Error buscando conversación:', conversationError);
+          } else if (conversation) {
+            console.log(`📝 Actualizando emoción en conversación ${conversation.id} a: ${detectedEmotion}`);
+            
+            const { error: emotionError } = await supabase
+              .from('conversaciones')
+              .update({ 
+                user_current_emotion: detectedEmotion,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', conversation.id);
+            
+            if (emotionError) {
+              console.error('❌ Error actualizando emoción:', emotionError);
+            } else {
+              console.log('✅ Emoción actualizada exitosamente:', detectedEmotion);
+            }
+          } else {
+            console.log('⚠️ No se encontró conversación para actualizar emoción');
+          }
         } else {
-          console.log('✅ Emoción actualizada:', detectedEmotion);
+          console.log('⚠️ No se pudo detectar emoción del usuario');
         }
+      } catch (emotionError) {
+        console.error('❌ Error en detección de emoción:', emotionError);
       }
-    }
 
     if (comment) {
       // Obtener historial de mensajes para contexto
@@ -121,33 +135,64 @@ async function handleInstagramComment(commentData) {
 
       // Generar respuesta con IA
       const geminiClient = getGeminiClient();
-      if (geminiClient) {
-        const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-        const prompt = convertMessagesForGemini(messages);
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const aiReply = response.text();
-        
-        if (aiReply) {
-          // Convertir formato para Instagram
-          const formattedReply = convertToInstagramFormat(aiReply);
+      if (geminiClient && geminiClient.models && typeof geminiClient.models.generateContent === 'function') {
+        try {
+          const prompt = convertMessagesForGemini(messages);
+
+          // Preparar contenido con posible imagen del post como contexto visual
+          let contents = prompt;
           
-          // Enviar respuesta
-          await sendInstagramCommentReply(commentData.id, formattedReply);
-          
-          // Guardar respuesta de IA como comentario
-          await saveInstagramComment({
-            post_id: post.id,
-            instagram_comment_id: `ai_reply_${Date.now()}`,
-            parent_comment_id: comment.id,
-            user_id: '17841477544945260',
-            username: 'magneto_proyecto_ing',
-            comment_text: formattedReply,
-            is_ai_response: true,
-            ai_model: 'google/gemini-2.5-flash-lite'
+          // Si hay imagen, preparar para incluirla (puede requerir ajuste según la nueva API)
+          try {
+            if (mediaInfo?.media_url) {
+              // Por ahora solo texto, la nueva API puede requerir formato diferente para imágenes
+              contents = prompt;
+            }
+          } catch (_) {
+            // Ignorar fallo de imagen y continuar solo con texto
+          }
+
+          // Usar la nueva API de @google/genai
+          const response = await geminiClient.models.generateContent({
+            model: "gemini-2.5-flash-lite",
+            contents: contents
           });
           
-          console.log('Respuesta enviada exitosamente al comentario:', commentData.id);
+          const aiReply = response.text || '';
+          
+          if (aiReply) {
+            // Convertir formato para Instagram
+            const formattedReply = convertToInstagramFormat(aiReply);
+            
+            // Responder y, según sentimiento, dar like automáticamente
+            await replyAndMaybeLike(commentData.id, commentData.text, formattedReply);
+            
+            // Guardar respuesta de IA como comentario
+            await saveInstagramComment({
+              post_id: post.id,
+              instagram_comment_id: `ai_reply_${Date.now()}`,
+              parent_comment_id: comment.id,
+              user_id: '17841477544945260',
+              username: 'magneto_proyecto_ing',
+              comment_text: formattedReply,
+              is_ai_response: true,
+              ai_model: 'google/gemini-2.5-flash-lite'
+            });
+            
+            console.log('Respuesta enviada exitosamente al comentario:', commentData.id);
+          }
+        } catch (geminiError) {
+          console.error('❌ Error generando respuesta con Gemini:', geminiError);
+          console.error('   Tipo de error:', geminiError.constructor.name);
+          console.error('   Mensaje:', geminiError.message);
+          console.error('   Stack:', geminiError.stack);
+          // Continuar sin respuesta de IA si falla
+        }
+      } else {
+        console.warn('⚠️ Cliente Gemini no disponible o no tiene el método models.generateContent');
+        if (geminiClient) {
+          console.warn('   Tipo de cliente:', typeof geminiClient);
+          console.warn('   Métodos disponibles:', Object.keys(geminiClient || {}));
         }
       }
     }
@@ -263,33 +308,42 @@ async function handleInstagramMention(mentionData) {
 
       // Generar respuesta con IA
       const geminiClient = getGeminiClient();
-      if (geminiClient) {
-        const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-        const prompt = convertMessagesForGemini(messages);
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const aiReply = response.text();
-        
-        if (aiReply) {
-          // Convertir formato para Instagram
-          const formattedReply = convertToInstagramFormat(aiReply);
+      if (geminiClient && geminiClient.models && typeof geminiClient.models.generateContent === 'function') {
+        try {
+          const prompt = convertMessagesForGemini(messages);
           
-          // Enviar respuesta
-          await sendInstagramCommentReply(mentionData.id, formattedReply);
+          // Usar la nueva API de @google/genai
+          const response = await geminiClient.models.generateContent({
+            model: "gemini-2.5-flash-lite",
+            contents: prompt
+          });
           
-          // Guardar respuesta de IA
-          const aiMessageData = {
-            conversacion_id: conversation.id,
-            platform_message_id: `ai_reply_${Date.now()}`,
-            content: formattedReply,
-            message_type: 'outgoing',
-            is_ai_generated: true,
-            ai_model: 'gemini-2.5-flash-lite',
-            author_name: 'Magneto AI',
-            author_type: 'ai'
-          };
+          const aiReply = response.text || '';
+          
+          if (aiReply) {
+            // Convertir formato para Instagram
+            const formattedReply = convertToInstagramFormat(aiReply);
+            
+            // Enviar respuesta
+            await sendInstagramCommentReply(mentionData.id, formattedReply);
+            
+            // Guardar respuesta de IA
+            const aiMessageData = {
+              conversacion_id: conversation.id,
+              platform_message_id: `ai_reply_${Date.now()}`,
+              content: formattedReply,
+              message_type: 'outgoing',
+              is_ai_generated: true,
+              ai_model: 'gemini-2.5-flash-lite',
+              author_name: 'Magneto AI',
+              author_type: 'ai'
+            };
 
-          await saveMessageToSupabase(aiMessageData);
+            await saveMessageToSupabase(aiMessageData);
+          }
+        } catch (geminiError) {
+          console.error('❌ Error generando respuesta con Gemini para mención:', geminiError);
+          console.error('   Mensaje:', geminiError.message);
         }
       }
     }
@@ -405,23 +459,34 @@ async function handleInstagramMessage(messageData) {
 
       // Detectar emoción del usuario automáticamente
       console.log('😊 Detectando emoción del usuario...');
-      const detectedEmotion = await detectUserEmotion(messageData.sender?.id);
-      
-      if (detectedEmotion && conversation) {
-        // Actualizar emoción en la conversación
-        const { error: emotionError } = await supabase
-          .from('conversaciones')
-          .update({ 
-            user_current_emotion: detectedEmotion,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', conversation.id);
+      try {
+        const detectedEmotion = await detectUserEmotion(messageData.sender?.id);
+        console.log(`🎭 Emoción detectada para DM: ${detectedEmotion}`);
         
-        if (emotionError) {
-          console.error('❌ Error actualizando emoción:', emotionError);
-        } else {
-          console.log('✅ Emoción actualizada:', detectedEmotion);
+        if (detectedEmotion && conversation) {
+          console.log(`📝 Actualizando emoción en conversación ${conversation.id} a: ${detectedEmotion}`);
+          
+          // Actualizar emoción en la conversación
+          const { error: emotionError } = await supabase
+            .from('conversaciones')
+            .update({ 
+              user_current_emotion: detectedEmotion,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', conversation.id);
+          
+          if (emotionError) {
+            console.error('❌ Error actualizando emoción:', emotionError);
+          } else {
+            console.log('✅ Emoción actualizada exitosamente:', detectedEmotion);
+          }
+        } else if (!detectedEmotion) {
+          console.log('⚠️ No se pudo detectar emoción del usuario');
+        } else if (!conversation) {
+          console.log('⚠️ No hay conversación para actualizar emoción');
         }
+      } catch (emotionError) {
+        console.error('❌ Error en detección de emoción:', emotionError);
       }
 
       // Obtener historial de mensajes para contexto
@@ -490,8 +555,92 @@ async function handleInstagramMessage(messageData) {
   }
 }
 
+// Handler para likes de posts de Instagram
+async function handleInstagramLike(likeData) {
+  try {
+    console.log('Procesando like de Instagram:', likeData);
+    
+    const PostLikeRepository = require('../repositories/PostLikeRepository');
+    const { getInstagramMediaInfo } = require('./functions');
+    const postLikeRepository = new PostLikeRepository();
+
+    // Extraer información del webhook de Instagram
+    const {
+      object_id: postId,
+      user_id: userId,
+      username,
+      timestamp
+    } = likeData;
+
+    if (!postId || !userId) {
+      console.error('Datos incompletos en like:', likeData);
+      return { success: false, message: 'Datos incompletos' };
+    }
+
+    // Verificar si ya existe este like (evitar duplicados)
+    const existingLike = await postLikeRepository.findByPostAndUser(postId, userId);
+    if (existingLike) {
+      console.log('Like ya existe, actualizando timestamp');
+      // Actualizar timestamp si es un nuevo like del mismo usuario
+      return { success: true, message: 'Like ya registrado', like: existingLike };
+    }
+
+    // Obtener información del post desde Instagram API
+    let mediaInfo = null;
+    try {
+      mediaInfo = await getInstagramMediaInfo(postId);
+    } catch (error) {
+      console.warn('No se pudo obtener información del post:', error.message);
+      // Continuar sin la información del post si no está disponible
+    }
+
+    // Crear el like en la base de datos
+    const like = await postLikeRepository.create({
+      instagramPostId: postId,
+      instagramUserId: userId,
+      username: username || 'unknown',
+      mediaType: mediaInfo?.media_type || 'UNKNOWN',
+      mediaUrl: mediaInfo?.media_url || null,
+      caption: mediaInfo?.caption || null,
+      timestamp: timestamp ? new Date(timestamp * 1000) : new Date()
+    });
+
+    console.log('✅ Like registrado exitosamente:', like.id);
+
+    // Analizar preferencias del usuario (asíncrono, no bloquea la respuesta)
+    setImmediate(async () => {
+      try {
+        const UserPreferencesService = require('../services/UserPreferencesService');
+        const preferencesService = new UserPreferencesService();
+        
+        // Verificar si tiene suficientes datos para análisis
+        const hasEnoughData = await preferencesService.hasEnoughData(userId, 5);
+        if (hasEnoughData) {
+          console.log(`📊 Usuario ${userId} tiene suficientes likes para análisis de preferencias`);
+          // Opcional: Generar resumen de preferencias
+          // const summary = await preferencesService.generateAIPreferencesSummary(userId);
+          // console.log('Resumen de preferencias:', summary);
+        }
+      } catch (error) {
+        console.error('Error analizando preferencias del usuario:', error);
+        // No fallar si el análisis de preferencias falla
+      }
+    });
+
+    return {
+      success: true,
+      message: 'Like procesado exitosamente',
+      like: like.toResponseJson()
+    };
+  } catch (error) {
+    console.error('❌ Error procesando like de Instagram:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   handleInstagramComment,
   handleInstagramMention,
-  handleInstagramMessage
+  handleInstagramMessage,
+  handleInstagramLike
 };
